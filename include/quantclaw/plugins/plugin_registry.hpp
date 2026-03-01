@@ -32,12 +32,15 @@ struct PluginRecord {
   PluginStatus status = PluginStatus::kLoaded;
   std::string error;
 
-  // Declared capabilities from manifest
+  // Declared capabilities from manifest + sidecar
+  std::vector<std::string> tool_names;
   std::vector<std::string> channel_ids;
   std::vector<std::string> provider_ids;
+  std::vector<std::string> service_ids;
   std::vector<std::string> skill_names;
   std::vector<std::string> gateway_methods;
   std::vector<std::string> cli_commands;
+  std::vector<std::string> command_names;
   std::vector<std::string> hook_names;
   int http_handler_count = 0;
 
@@ -64,6 +67,9 @@ class PluginRegistry {
 
   // Check if a plugin is enabled
   bool IsEnabled(const std::string& id) const;
+
+  // Update plugin records with capabilities reported by sidecar
+  void UpdateFromSidecar(const nlohmann::json& sidecar_plugin_list);
 
   // JSON summary of all plugins
   nlohmann::json ToJson() const;

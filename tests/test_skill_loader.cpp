@@ -388,3 +388,188 @@ TEST_F(SkillLoaderTest, PerSkillDisableViaConfig) {
 
     std::filesystem::remove_all(workspace);
 }
+
+// --- OpenClaw format compatibility tests ---
+
+TEST_F(SkillLoaderTest, OpenClawInstallArrayFormat) {
+    // OpenClaw uses JSON-style install arrays. Our simple YAML parser does not
+    // handle arrays of objects, but the code paths for parsing install arrays
+    // are tested here via the JSON install section (QuantClaw object format).
+    // The metadata.openclaw fields (emoji, homepage, etc.) are tested below.
+    write_skill("weather", R"YAML(---
+name: weather
+description: Get weather forecast
+emoji: "⛅"
+homepage: "https://weather.example.com"
+skillKey: "weather-v2"
+requires:
+  bins:
+    - curl
+install:
+  brew: curl
+  node: "@weather/cli"
+---
+
+# Weather Skill
+)YAML");
+
+    auto skills = skill_loader_->LoadSkillsFromDirectory(test_dir_);
+    ASSERT_EQ(skills.size(), 1);
+    auto& s = skills[0];
+
+    EXPECT_EQ(s.name, "weather");
+    EXPECT_EQ(s.emoji, "⛅");
+    EXPECT_EQ(s.homepage, "https://weather.example.com");
+    EXPECT_EQ(s.skill_key, "weather-v2");
+    ASSERT_EQ(s.required_bins.size(), 1);
+    EXPECT_EQ(s.required_bins[0], "curl");
+
+    ASSERT_EQ(s.installs.size(), 2);
+
+    // Both install methods should parse correctly
+    bool found_brew = false, found_node = false;
+    for (const auto& inst : s.installs) {
+        if (inst.EffectiveMethod() == "brew") {
+            EXPECT_EQ(inst.EffectiveFormula(), "curl");
+            found_brew = true;
+        }
+        if (inst.EffectiveMethod() == "node") {
+            EXPECT_EQ(inst.EffectiveFormula(), "@weather/cli");
+            found_node = true;
+        }
+    }
+    EXPECT_TRUE(found_brew);
+    EXPECT_TRUE(found_node);
+}
+
+TEST_F(SkillLoaderTest, QuantClawObjectInstallFormat) {
+    write_skill("tools", R"(---
+name: tools
+install:
+  apt: build-essential
+  node: typescript
+---
+
+# Tools
+)");
+
+    auto skills = skill_loader_->LoadSkillsFromDirectory(test_dir_);
+    ASSERT_EQ(skills.size(), 1);
+    auto& s = skills[0];
+
+    ASSERT_EQ(s.installs.size(), 2);
+    // Both formats should produce valid EffectiveMethod/Formula
+    bool found_apt = false, found_node = false;
+    for (const auto& inst : s.installs) {
+        if (inst.EffectiveMethod() == "apt") {
+            EXPECT_EQ(inst.EffectiveFormula(), "build-essential");
+            found_apt = true;
+        }
+        if (inst.EffectiveMethod() == "node") {
+            EXPECT_EQ(inst.EffectiveFormula(), "typescript");
+            found_node = true;
+        }
+    }
+    EXPECT_TRUE(found_apt);
+    EXPECT_TRUE(found_node);
+}
+
+TEST_F(SkillLoaderTest, OpenClawMetadataFieldsFallback) {
+    // Metadata.openclaw fields should populate top-level fields
+    write_skill("meta-test", R"YAML(---
+name: meta-test
+metadata:
+  openclaw:
+    emoji: "🔧"
+    primaryEnv: "MY_API_KEY"
+    always: true
+    os:
+      - linux
+      - darwin
+---
+
+# Meta Test
+)YAML");
+
+    auto skills = skill_loader_->LoadSkillsFromDirectory(test_dir_);
+    ASSERT_EQ(skills.size(), 1);
+    auto& s = skills[0];
+
+    EXPECT_EQ(s.emoji, "🔧");
+    EXPECT_EQ(s.primary_env, "MY_API_KEY");
+    EXPECT_TRUE(s.always);
+    ASSERT_EQ(s.os_restrict.size(), 2);
+    EXPECT_EQ(s.os_restrict[0], "linux");
+    EXPECT_EQ(s.os_restrict[1], "darwin");
+}
+
+TEST_F(SkillLoaderTest, FlatFieldsNotOverriddenByMetadata) {
+    // Top-level fields should take precedence over metadata.openclaw
+    write_skill("priority-test", R"YAML(---
+name: priority-test
+emoji: "🎯"
+primaryEnv: "TOP_LEVEL"
+metadata:
+  openclaw:
+    emoji: "🔧"
+    primaryEnv: "NESTED"
+---
+
+# Priority Test
+)YAML");
+
+    auto skills = skill_loader_->LoadSkillsFromDirectory(test_dir_);
+    ASSERT_EQ(skills.size(), 1);
+    auto& s = skills[0];
+
+    // Top-level fields win
+    EXPECT_EQ(s.emoji, "🎯");
+    EXPECT_EQ(s.primary_env, "TOP_LEVEL");
+}
+
+TEST_F(SkillLoaderTest, InstallInfoEffectiveMethods) {
+    quantclaw::SkillInstallInfo info;
+
+    // Empty defaults
+    EXPECT_EQ(info.EffectiveMethod(), "");
+    EXPECT_EQ(info.EffectiveFormula(), "");
+    EXPECT_EQ(info.EffectiveBinary(), "");
+
+    // Method only
+    info.method = "apt";
+    EXPECT_EQ(info.EffectiveMethod(), "apt");
+
+    // Kind overrides method
+    info.kind = "brew";
+    EXPECT_EQ(info.EffectiveMethod(), "brew");
+
+    // Formula priority: formula > package > url
+    info.url = "https://example.com/bin";
+    EXPECT_EQ(info.EffectiveFormula(), "https://example.com/bin");
+    info.package = "@scope/pkg";
+    EXPECT_EQ(info.EffectiveFormula(), "@scope/pkg");
+    info.formula = "explicit-formula";
+    EXPECT_EQ(info.EffectiveFormula(), "explicit-formula");
+
+    // Binary priority: binary > bins[0]
+    info.bins = {"bin1", "bin2"};
+    EXPECT_EQ(info.EffectiveBinary(), "bin1");
+    info.binary = "explicit-bin";
+    EXPECT_EQ(info.EffectiveBinary(), "explicit-bin");
+}
+
+TEST_F(SkillLoaderTest, HomepageAndSkillKeyFromTopLevel) {
+    write_skill("topfields", R"(---
+name: topfields
+homepage: "https://example.com"
+skillKey: "my-key"
+---
+
+# Top Fields
+)");
+
+    auto skills = skill_loader_->LoadSkillsFromDirectory(test_dir_);
+    ASSERT_EQ(skills.size(), 1);
+    EXPECT_EQ(skills[0].homepage, "https://example.com");
+    EXPECT_EQ(skills[0].skill_key, "my-key");
+}

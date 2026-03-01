@@ -12,6 +12,7 @@ namespace quantclaw {
     class AgentLoop;
     class PromptBuilder;
     class ToolRegistry;
+    class PluginSystem;
     struct QuantClawConfig;
 }
 
@@ -32,6 +33,7 @@ void register_api_routes(
     const quantclaw::QuantClawConfig& config,
     quantclaw::gateway::GatewayServer& gateway_server,
     std::shared_ptr<spdlog::logger> logger,
-    std::function<void()> reload_fn = nullptr);
+    std::function<void()> reload_fn = nullptr,
+    quantclaw::PluginSystem* plugin_system = nullptr);
 
 } // namespace quantclaw::web

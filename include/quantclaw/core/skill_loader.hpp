@@ -12,11 +12,48 @@
 
 namespace quantclaw {
 
-// Install method for skill auto-install
+// Install method for skill auto-install.
+// Supports both QuantClaw flat format (method/formula/binary) and
+// OpenClaw array format (kind/formula/package/bins).
 struct SkillInstallInfo {
-    std::string method;   // "node", "go", "uv", "download", "apt"
+    std::string method;   // "node", "go", "uv", "download", "apt", "brew"
     std::string formula;  // package/URL to install
     std::string binary;   // expected binary after install
+
+    // OpenClaw extended fields
+    std::string kind;                    // alias for method
+    std::string id;                      // optional install spec identifier
+    std::string label;                   // human-readable label
+    std::string package;                 // npm/go package name
+    std::string module;                  // node module name
+    std::string url;                     // download URL
+    std::string archive;                 // archive type
+    std::string target_dir;              // target directory for download
+    std::vector<std::string> bins;       // expected binaries (OpenClaw format)
+    std::vector<std::string> os;         // OS restriction for this install
+    bool extract = false;                // extract archive
+    int strip_components = 0;            // tar strip-components
+
+    // Returns the effective install method (kind takes precedence if set)
+    std::string EffectiveMethod() const {
+        return kind.empty() ? method : kind;
+    }
+
+    // Returns the effective package identifier
+    std::string EffectiveFormula() const {
+        if (!formula.empty()) return formula;
+        if (!package.empty()) return package;
+        if (!module.empty()) return module;
+        if (!url.empty()) return url;
+        return "";
+    }
+
+    // Returns the first expected binary
+    std::string EffectiveBinary() const {
+        if (!binary.empty()) return binary;
+        if (!bins.empty()) return bins.front();
+        return "";
+    }
 };
 
 // Slash command defined in a skill
@@ -38,6 +75,8 @@ struct SkillMetadata {
     bool always = false;                      // skip all gating
     std::string primary_env;                  // primary environment variable
     std::string emoji;                        // display emoji
+    std::string homepage;                     // skill homepage URL
+    std::string skill_key;                    // alternative skill key
     std::string content;
 
     // Phase 3 additions

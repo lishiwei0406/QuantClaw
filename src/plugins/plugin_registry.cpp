@@ -112,6 +112,75 @@ bool PluginRegistry::IsEnabled(const std::string& id) const {
   return rec && rec->enabled;
 }
 
+void PluginRegistry::UpdateFromSidecar(
+    const nlohmann::json& sidecar_plugin_list) {
+  if (!sidecar_plugin_list.is_object() ||
+      !sidecar_plugin_list.contains("plugins") ||
+      !sidecar_plugin_list["plugins"].is_array()) {
+    logger_->warn("Invalid sidecar plugin list format");
+    return;
+  }
+
+  for (const auto& entry : sidecar_plugin_list["plugins"]) {
+    if (!entry.is_object()) continue;
+    std::string id = entry.value("id", "");
+    if (id.empty()) continue;
+
+    auto it = id_index_.find(id);
+    if (it == id_index_.end()) {
+      // Plugin loaded by sidecar but not in manifest registry — add it
+      PluginRecord record;
+      record.id = id;
+      record.name = entry.value("name", id);
+      record.version = entry.value("version", "");
+      record.enabled = true;
+      record.status = PluginStatus::kLoaded;
+      record.origin = PluginOrigin::kConfig;
+      id_index_[id] = plugins_.size();
+      plugins_.push_back(std::move(record));
+      it = id_index_.find(id);
+    }
+
+    auto& rec = plugins_[it->second];
+
+    auto get_strings = [](const nlohmann::json& j,
+                          const std::string& key) -> std::vector<std::string> {
+      std::vector<std::string> result;
+      if (j.contains(key) && j[key].is_array()) {
+        for (const auto& v : j[key]) {
+          if (v.is_string()) result.push_back(v.get<std::string>());
+        }
+      }
+      return result;
+    };
+
+    auto merge_unique = [](std::vector<std::string>& dest,
+                           const std::vector<std::string>& src) {
+      for (const auto& s : src) {
+        if (std::find(dest.begin(), dest.end(), s) == dest.end()) {
+          dest.push_back(s);
+        }
+      }
+    };
+
+    merge_unique(rec.tool_names, get_strings(entry, "tools"));
+    merge_unique(rec.hook_names, get_strings(entry, "hooks"));
+    merge_unique(rec.service_ids, get_strings(entry, "services"));
+    merge_unique(rec.provider_ids, get_strings(entry, "providers"));
+    merge_unique(rec.command_names, get_strings(entry, "commands"));
+    merge_unique(rec.gateway_methods, get_strings(entry, "gatewayMethods"));
+    merge_unique(rec.channel_ids, get_strings(entry, "channels"));
+    merge_unique(rec.cli_commands, get_strings(entry, "cliEntries"));
+
+    if (entry.contains("httpHandlers") && entry["httpHandlers"].is_number()) {
+      rec.http_handler_count = entry["httpHandlers"].get<int>();
+    }
+
+    logger_->debug("Updated plugin '{}' capabilities: {} tools, {} hooks",
+                   id, rec.tool_names.size(), rec.hook_names.size());
+  }
+}
+
 nlohmann::json PluginRegistry::ToJson() const {
   nlohmann::json arr = nlohmann::json::array();
   for (const auto& p : plugins_) {
@@ -126,9 +195,16 @@ nlohmann::json PluginRegistry::ToJson() const {
     j["enabled"] = p.enabled;
     j["status"] = plugin_status_to_string(p.status);
     if (!p.error.empty()) j["error"] = p.error;
+    if (!p.tool_names.empty()) j["tools"] = p.tool_names;
     if (!p.channel_ids.empty()) j["channels"] = p.channel_ids;
     if (!p.provider_ids.empty()) j["providers"] = p.provider_ids;
+    if (!p.service_ids.empty()) j["services"] = p.service_ids;
     if (!p.skill_names.empty()) j["skills"] = p.skill_names;
+    if (!p.gateway_methods.empty()) j["gatewayMethods"] = p.gateway_methods;
+    if (!p.cli_commands.empty()) j["cliCommands"] = p.cli_commands;
+    if (!p.command_names.empty()) j["commands"] = p.command_names;
+    if (!p.hook_names.empty()) j["hooks"] = p.hook_names;
+    if (p.http_handler_count > 0) j["httpHandlers"] = p.http_handler_count;
     arr.push_back(j);
   }
   return arr;

@@ -13,6 +13,7 @@
 #include "quantclaw/core/cron_scheduler.hpp"
 #include "quantclaw/security/exec_approval.hpp"
 #include "quantclaw/core/session_compaction.hpp"
+#include "quantclaw/plugins/plugin_system.hpp"
 #include "quantclaw/config.hpp"
 #include <chrono>
 #include <functional>
@@ -33,7 +34,8 @@ void register_rpc_handlers(
     std::shared_ptr<quantclaw::ProviderRegistry> provider_registry,
     std::shared_ptr<quantclaw::SkillLoader> skill_loader,
     std::shared_ptr<quantclaw::CronScheduler> cron_scheduler,
-    std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr)
+    std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr,
+    quantclaw::PluginSystem* plugin_system)
 {
     // --- gateway.health ---
     server.RegisterHandler(methods::kGatewayHealth,
@@ -858,11 +860,91 @@ void register_rpc_handlers(
         }
     );
 
+    // --- Plugin methods ---
+    if (plugin_system) {
+        // plugins.list
+        server.RegisterHandler(methods::kPluginsList,
+            [plugin_system](const nlohmann::json& /*params*/,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                return {{"plugins", plugin_system->Registry().ToJson()}};
+            }
+        );
+
+        // plugins.tools
+        server.RegisterHandler(methods::kPluginsTools,
+            [plugin_system](const nlohmann::json& /*params*/,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                return {{"tools", plugin_system->GetToolSchemas()}};
+            }
+        );
+
+        // plugins.call_tool
+        server.RegisterHandler(methods::kPluginsCallTool,
+            [plugin_system](const nlohmann::json& params,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                std::string name = params.value("toolName", "");
+                if (name.empty()) throw std::runtime_error("toolName is required");
+                auto args = params.value("args", nlohmann::json::object());
+                return plugin_system->CallTool(name, args);
+            }
+        );
+
+        // plugins.services
+        server.RegisterHandler(methods::kPluginsServices,
+            [plugin_system](const nlohmann::json& params,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                std::string action = params.value("action", "list");
+                if (action == "start") {
+                    return plugin_system->StartService(params.value("serviceId", ""));
+                }
+                if (action == "stop") {
+                    return plugin_system->StopService(params.value("serviceId", ""));
+                }
+                return {{"services", plugin_system->ListServices()}};
+            }
+        );
+
+        // plugins.providers
+        server.RegisterHandler(methods::kPluginsProviders,
+            [plugin_system](const nlohmann::json& /*params*/,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                return {{"providers", plugin_system->ListProviders()}};
+            }
+        );
+
+        // plugins.commands
+        server.RegisterHandler(methods::kPluginsCommands,
+            [plugin_system](const nlohmann::json& params,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                std::string action = params.value("action", "list");
+                if (action == "execute") {
+                    std::string cmd = params.value("command", "");
+                    auto args = params.value("args", nlohmann::json::object());
+                    return plugin_system->ExecuteCommand(cmd, args);
+                }
+                return {{"commands", plugin_system->ListCommands()}};
+            }
+        );
+
+        // plugins.gateway — forward plugin-registered gateway methods
+        server.RegisterHandler(methods::kPluginsGateway,
+            [plugin_system](const nlohmann::json& params,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                std::string action = params.value("action", "list");
+                if (action == "list") {
+                    return {{"methods", plugin_system->ListGatewayMethods()}};
+                }
+                return {{"methods", plugin_system->ListGatewayMethods()}};
+            }
+        );
+    }
+
     int handler_count = 22;  // base handlers
     if (reload_fn) handler_count++;
     if (skill_loader) handler_count += 2;
     if (cron_scheduler) handler_count += 3;
     if (exec_approval_mgr) handler_count += 2;
+    if (plugin_system) handler_count += 7;
     logger->info("Registered {} RPC handlers", handler_count);
 }
 

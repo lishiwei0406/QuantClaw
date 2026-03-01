@@ -59,6 +59,22 @@ class PluginSystem {
   nlohmann::json HandleCli(const std::string& command,
                            const std::vector<std::string>& args);
 
+  // Service management via sidecar
+  nlohmann::json ListServices();
+  nlohmann::json StartService(const std::string& service_id);
+  nlohmann::json StopService(const std::string& service_id);
+
+  // Provider listing via sidecar
+  nlohmann::json ListProviders();
+
+  // Command listing and execution via sidecar
+  nlohmann::json ListCommands();
+  nlohmann::json ExecuteCommand(const std::string& command,
+                                const nlohmann::json& args);
+
+  // Gateway method listing via sidecar
+  nlohmann::json ListGatewayMethods();
+
   bool IsSidecarRunning() const;
 
  private:

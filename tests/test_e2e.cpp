@@ -32,6 +32,7 @@ namespace quantclaw {
     class SkillLoader;
     class CronScheduler;
     class ExecApprovalManager;
+    class PluginSystem;
 }
 namespace quantclaw::gateway {
     void register_rpc_handlers(
@@ -46,7 +47,8 @@ namespace quantclaw::gateway {
         std::shared_ptr<quantclaw::ProviderRegistry> provider_registry = nullptr,
         std::shared_ptr<quantclaw::SkillLoader> skill_loader = nullptr,
         std::shared_ptr<quantclaw::CronScheduler> cron_scheduler = nullptr,
-        std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr);
+        std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr,
+        quantclaw::PluginSystem* plugin_system = nullptr);
 }
 
 // --- Mock LLM Provider ---

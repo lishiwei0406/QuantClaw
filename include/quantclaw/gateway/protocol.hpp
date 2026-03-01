@@ -245,6 +245,15 @@ namespace methods {
     // Models
     constexpr const char* kModelsSet        = "models.set";
 
+    // Plugin methods
+    constexpr const char* kPluginsList       = "plugins.list";
+    constexpr const char* kPluginsTools      = "plugins.tools";
+    constexpr const char* kPluginsCallTool   = "plugins.call_tool";
+    constexpr const char* kPluginsServices   = "plugins.services";
+    constexpr const char* kPluginsProviders  = "plugins.providers";
+    constexpr const char* kPluginsCommands   = "plugins.commands";
+    constexpr const char* kPluginsGateway    = "plugins.gateway";
+
     // OpenClaw-compatible method names
     constexpr const char* kOcConnect          = "connect";
     constexpr const char* kOcChatSend         = "chat.send";

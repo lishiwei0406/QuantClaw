@@ -171,38 +171,44 @@ bool SkillLoader::InstallSkill(const SkillMetadata& skill) {
 
     bool all_ok = true;
     for (const auto& inst : skill.installs) {
+        std::string eff_binary = inst.EffectiveBinary();
+        std::string eff_method = inst.EffectiveMethod();
+        std::string eff_formula = inst.EffectiveFormula();
+
         // Skip if binary already available
-        if (!inst.binary.empty() && is_binary_available(inst.binary)) {
-            logger_->debug("Skill '{}': {} already installed", skill.name, inst.binary);
+        if (!eff_binary.empty() && is_binary_available(eff_binary)) {
+            logger_->debug("Skill '{}': {} already installed", skill.name, eff_binary);
             continue;
         }
 
         std::string cmd;
-        if (inst.method == "node") {
-            cmd = "npm install -g " + inst.formula;
-        } else if (inst.method == "go") {
-            cmd = "go install " + inst.formula;
-        } else if (inst.method == "uv") {
-            cmd = "uv pip install " + inst.formula;
-        } else if (inst.method == "apt") {
-            cmd = "sudo apt-get install -y " + inst.formula;
-        } else if (inst.method == "download") {
+        if (eff_method == "node") {
+            cmd = "npm install -g " + eff_formula;
+        } else if (eff_method == "go") {
+            cmd = "go install " + eff_formula;
+        } else if (eff_method == "uv") {
+            cmd = "uv pip install " + eff_formula;
+        } else if (eff_method == "apt") {
+            cmd = "sudo apt-get install -y " + eff_formula;
+        } else if (eff_method == "brew") {
+            cmd = "brew install " + eff_formula;
+        } else if (eff_method == "download") {
             const char* home = std::getenv("HOME");
             std::string bin_dir = std::string(home ? home : "/tmp") +
                                   "/.quantclaw/bin";
             std::filesystem::create_directories(bin_dir);
             std::string dest = bin_dir + "/" +
-                               (inst.binary.empty() ? "downloaded" : inst.binary);
-            cmd = "curl -fsSL -o " + dest + " " + inst.formula +
+                               (eff_binary.empty() ? "downloaded" : eff_binary);
+            cmd = "curl -fsSL -o " + dest + " " + eff_formula +
                   " && chmod +x " + dest;
         } else {
             logger_->warn("Skill '{}': unknown install method '{}'",
-                         skill.name, inst.method);
+                         skill.name, eff_method);
             continue;
         }
 
         logger_->info("Installing skill '{}' via {}: {}", skill.name,
-                      inst.method, cmd);
+                      eff_method, cmd);
         int ret = std::system(cmd.c_str());
         if (ret != 0) {
             logger_->error("Skill '{}' install failed (exit {})", skill.name, ret);
@@ -316,7 +322,43 @@ SkillMetadata SkillLoader::parse_skill_file(const std::filesystem::path& skill_f
                 skill.config_files = metadata["config"].get<std::vector<std::string>>();
             }
 
-            // Extract install info (metadata.openclaw.install)
+            // Extract additional metadata.openclaw fields
+            if (metadata.contains("metadata") &&
+                metadata["metadata"].contains("openclaw")) {
+                const auto& oc = metadata["metadata"]["openclaw"];
+                if (oc.contains("emoji") && skill.emoji.empty()) {
+                    skill.emoji = oc["emoji"].get<std::string>();
+                }
+                if (oc.contains("primaryEnv") && skill.primary_env.empty()) {
+                    skill.primary_env = oc["primaryEnv"].get<std::string>();
+                }
+                if (oc.contains("homepage")) {
+                    skill.homepage = oc["homepage"].get<std::string>();
+                }
+                if (oc.contains("skillKey")) {
+                    skill.skill_key = oc["skillKey"].get<std::string>();
+                }
+                if (oc.contains("always") && !skill.always) {
+                    if (oc["always"].is_boolean()) {
+                        skill.always = oc["always"].get<bool>();
+                    }
+                }
+                if (oc.contains("os") && skill.os_restrict.empty()) {
+                    if (oc["os"].is_array()) {
+                        skill.os_restrict = oc["os"].get<std::vector<std::string>>();
+                    }
+                }
+            }
+            if (metadata.contains("homepage") && skill.homepage.empty()) {
+                skill.homepage = metadata["homepage"].get<std::string>();
+            }
+            if (metadata.contains("skillKey") && skill.skill_key.empty()) {
+                skill.skill_key = metadata["skillKey"].get<std::string>();
+            }
+
+            // Extract install info — supports both formats:
+            //   QuantClaw object: { "apt": "curl", "node": "@pkg/cli" }
+            //   OpenClaw array:   [{ "kind": "brew", "formula": "curl", "bins": ["curl"] }]
             nlohmann::json* install_section = nullptr;
             if (metadata.contains("metadata") &&
                 metadata["metadata"].contains("openclaw") &&
@@ -325,18 +367,57 @@ SkillMetadata SkillLoader::parse_skill_file(const std::filesystem::path& skill_f
             } else if (metadata.contains("install")) {
                 install_section = &metadata["install"];
             }
-            if (install_section && install_section->is_object()) {
-                for (auto it = install_section->begin();
-                     it != install_section->end(); ++it) {
-                    SkillInstallInfo info;
-                    info.method = it.key();
-                    if (it.value().is_string()) {
-                        info.formula = it.value().get<std::string>();
-                    } else if (it.value().is_object()) {
-                        info.formula = it.value().value("formula", "");
-                        info.binary = it.value().value("binary", "");
+            if (install_section) {
+                if (install_section->is_array()) {
+                    // OpenClaw array format
+                    for (const auto& entry : *install_section) {
+                        if (!entry.is_object()) continue;
+                        SkillInstallInfo info;
+                        info.kind = entry.value("kind", "");
+                        info.method = info.kind;  // alias
+                        info.id = entry.value("id", "");
+                        info.label = entry.value("label", "");
+                        info.formula = entry.value("formula", "");
+                        info.package = entry.value("package", "");
+                        info.module = entry.value("module", "");
+                        info.url = entry.value("url", "");
+                        info.archive = entry.value("archive", "");
+                        info.target_dir = entry.value("targetDir", "");
+                        info.extract = entry.value("extract", false);
+                        info.strip_components = entry.value("stripComponents", 0);
+                        if (entry.contains("bins") && entry["bins"].is_array()) {
+                            info.bins = entry["bins"].get<std::vector<std::string>>();
+                            if (info.binary.empty() && !info.bins.empty()) {
+                                info.binary = info.bins.front();
+                            }
+                        }
+                        if (entry.contains("os") && entry["os"].is_array()) {
+                            info.os = entry["os"].get<std::vector<std::string>>();
+                        }
+                        skill.installs.push_back(std::move(info));
                     }
-                    skill.installs.push_back(std::move(info));
+                } else if (install_section->is_object()) {
+                    // QuantClaw object format: { method: formula }
+                    for (auto it = install_section->begin();
+                         it != install_section->end(); ++it) {
+                        SkillInstallInfo info;
+                        info.method = it.key();
+                        info.kind = it.key();
+                        if (it.value().is_string()) {
+                            info.formula = it.value().get<std::string>();
+                        } else if (it.value().is_object()) {
+                            info.formula = it.value().value("formula", "");
+                            info.binary = it.value().value("binary", "");
+                            info.package = it.value().value("package", "");
+                            info.url = it.value().value("url", "");
+                            if (it.value().contains("bins") &&
+                                it.value()["bins"].is_array()) {
+                                info.bins = it.value()["bins"]
+                                    .get<std::vector<std::string>>();
+                            }
+                        }
+                        skill.installs.push_back(std::move(info));
+                    }
                 }
             }
 
@@ -467,8 +548,10 @@ nlohmann::json SkillLoader::parse_yaml_frontmatter(const std::string& yaml_str) 
 
         if (trimmed.empty()) continue;
 
-        // Pop stack until we find a context at lower indent
-        while (ctx.size() > 1 && ctx.top().first >= indent && trimmed[0] != '-') {
+        // Pop stack until we find a context at strictly lower indent.
+        // Using '>' (not '>=') so sibling keys at the same indent stay
+        // in the same parent object instead of being popped out.
+        while (ctx.size() > 1 && ctx.top().first > indent && trimmed[0] != '-') {
             ctx.pop();
         }
 

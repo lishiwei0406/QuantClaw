@@ -8,6 +8,7 @@
 #include "quantclaw/core/agent_loop.hpp"
 #include "quantclaw/core/prompt_builder.hpp"
 #include "quantclaw/tools/tool_registry.hpp"
+#include "quantclaw/plugins/plugin_system.hpp"
 #include "quantclaw/config.hpp"
 #include <chrono>
 #include <condition_variable>
@@ -44,7 +45,8 @@ void register_api_routes(
     const quantclaw::QuantClawConfig& config,
     quantclaw::gateway::GatewayServer& gateway_server,
     std::shared_ptr<spdlog::logger> logger,
-    std::function<void()> reload_fn)
+    std::function<void()> reload_fn,
+    quantclaw::PluginSystem* plugin_system)
 {
     // --- GET /api/health ---
     server.AddRawRoute("/api/health", "GET",
@@ -760,7 +762,110 @@ void register_api_routes(
         }
     );
 
-    logger->info("Registered {} HTTP API routes", reload_fn ? 15 : 14);
+    // --- Plugin HTTP routes (forwarded to sidecar) ---
+    int route_count = reload_fn ? 15 : 14;
+
+    if (plugin_system) {
+        // GET /api/plugins — list plugins
+        server.AddRawRoute("/api/plugins", "GET",
+            [plugin_system](const httplib::Request& /*req*/, httplib::Response& res) {
+                auto plugins_json = plugin_system->Registry().ToJson();
+                json_ok(res, {{"plugins", plugins_json}});
+            }
+        );
+
+        // GET /api/plugins/tools — list plugin tools
+        server.AddRawRoute("/api/plugins/tools", "GET",
+            [plugin_system](const httplib::Request& /*req*/, httplib::Response& res) {
+                auto tools = plugin_system->GetToolSchemas();
+                json_ok(res, {{"tools", tools}});
+            }
+        );
+
+        // POST /api/plugins/tools/:name — call a plugin tool
+        server.AddRawRoute("/api/plugins/tools/(.*)", "POST",
+            [plugin_system](const httplib::Request& req, httplib::Response& res) {
+                try {
+                    // Extract tool name from path
+                    auto path = req.path;
+                    auto prefix = std::string("/api/plugins/tools/");
+                    std::string tool_name = path.substr(prefix.size());
+                    if (tool_name.empty()) {
+                        json_error(res, 400, "Tool name is required");
+                        return;
+                    }
+                    nlohmann::json args = nlohmann::json::object();
+                    if (!req.body.empty()) {
+                        args = nlohmann::json::parse(req.body);
+                    }
+                    auto result = plugin_system->CallTool(tool_name, args);
+                    json_ok(res, result);
+                } catch (const std::exception& e) {
+                    json_error(res, 500, e.what());
+                }
+            }
+        );
+
+        // GET /api/plugins/services — list services
+        server.AddRawRoute("/api/plugins/services", "GET",
+            [plugin_system](const httplib::Request& /*req*/, httplib::Response& res) {
+                auto services = plugin_system->ListServices();
+                json_ok(res, {{"services", services}});
+            }
+        );
+
+        // GET /api/plugins/providers — list providers
+        server.AddRawRoute("/api/plugins/providers", "GET",
+            [plugin_system](const httplib::Request& /*req*/, httplib::Response& res) {
+                auto providers = plugin_system->ListProviders();
+                json_ok(res, {{"providers", providers}});
+            }
+        );
+
+        // GET /api/plugins/commands — list commands
+        server.AddRawRoute("/api/plugins/commands", "GET",
+            [plugin_system](const httplib::Request& /*req*/, httplib::Response& res) {
+                auto commands = plugin_system->ListCommands();
+                json_ok(res, {{"commands", commands}});
+            }
+        );
+
+        // ANY /plugins/* — forward to sidecar plugin HTTP handlers
+        server.AddRawRoute("/plugins/(.*)", "GET",
+            [plugin_system](const httplib::Request& req, httplib::Response& res) {
+                auto result = plugin_system->HandleHttp(
+                    req.method, req.path, nlohmann::json::object(), {});
+                int status = result.value("status", 200);
+                res.status = status;
+                if (result.contains("body")) {
+                    res.set_content(result["body"].dump(), "application/json");
+                }
+            }
+        );
+
+        server.AddRawRoute("/plugins/(.*)", "POST",
+            [plugin_system](const httplib::Request& req, httplib::Response& res) {
+                nlohmann::json body = nlohmann::json::object();
+                if (!req.body.empty()) {
+                    try {
+                        body = nlohmann::json::parse(req.body);
+                    } catch (...) {}
+                }
+                auto result = plugin_system->HandleHttp(
+                    req.method, req.path, body, {});
+                int status = result.value("status", 200);
+                res.status = status;
+                if (result.contains("body")) {
+                    res.set_content(result["body"].dump(), "application/json");
+                }
+            }
+        );
+
+        route_count += 8;
+        logger->info("Registered plugin HTTP routes (8 endpoints)");
+    }
+
+    logger->info("Registered {} HTTP API routes", route_count);
 }
 
 } // namespace quantclaw::web

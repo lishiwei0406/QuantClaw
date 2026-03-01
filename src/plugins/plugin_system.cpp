@@ -72,6 +72,14 @@ bool PluginSystem::Initialize(const QuantClawConfig& config,
     return false;
   }
 
+  // Update plugin records with capabilities from sidecar
+  auto list_resp = sidecar_->Call("plugin.list", {});
+  if (list_resp.ok) {
+    registry_.UpdateFromSidecar(list_resp.result);
+  } else {
+    logger_->warn("Failed to get plugin list from sidecar: {}", list_resp.error);
+  }
+
   // Fire gateway_start hook
   hooks_.Fire(hooks::kGatewayStart, {{"timestamp", std::time(nullptr)}});
 
@@ -124,7 +132,12 @@ nlohmann::json PluginSystem::ListSidecarPlugins() {
     return nlohmann::json::array();
   }
   auto resp = sidecar_->Call("plugin.list", {});
-  return resp.ok ? resp.result : nlohmann::json::array();
+  if (!resp.ok) return nlohmann::json::array();
+  // plugin.list returns {plugins: [...]}
+  if (resp.result.is_object() && resp.result.contains("plugins")) {
+    return resp.result["plugins"];
+  }
+  return resp.result;
 }
 
 nlohmann::json PluginSystem::HandleHttp(
@@ -165,6 +178,68 @@ nlohmann::json PluginSystem::HandleCli(
       {"args", args},
   });
   return resp.ok ? resp.result : nlohmann::json{{"error", resp.error}};
+}
+
+nlohmann::json PluginSystem::ListServices() {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return nlohmann::json::array();
+  }
+  auto resp = sidecar_->Call("plugin.services", {{"action", "list"}});
+  return resp.ok ? resp.result : nlohmann::json::array();
+}
+
+nlohmann::json PluginSystem::StartService(const std::string& service_id) {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return {{"error", "Sidecar not available"}};
+  }
+  auto resp = sidecar_->Call("plugin.services",
+                             {{"action", "start"}, {"serviceId", service_id}});
+  return resp.ok ? resp.result : nlohmann::json{{"error", resp.error}};
+}
+
+nlohmann::json PluginSystem::StopService(const std::string& service_id) {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return {{"error", "Sidecar not available"}};
+  }
+  auto resp = sidecar_->Call("plugin.services",
+                             {{"action", "stop"}, {"serviceId", service_id}});
+  return resp.ok ? resp.result : nlohmann::json{{"error", resp.error}};
+}
+
+nlohmann::json PluginSystem::ListProviders() {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return nlohmann::json::array();
+  }
+  auto resp = sidecar_->Call("plugin.providers", {});
+  return resp.ok ? resp.result : nlohmann::json::array();
+}
+
+nlohmann::json PluginSystem::ListCommands() {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return nlohmann::json::array();
+  }
+  auto resp = sidecar_->Call("plugin.commands", {{"action", "list"}});
+  return resp.ok ? resp.result : nlohmann::json::array();
+}
+
+nlohmann::json PluginSystem::ExecuteCommand(const std::string& command,
+                                            const nlohmann::json& args) {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return {{"error", "Sidecar not available"}};
+  }
+  auto resp = sidecar_->Call("plugin.commands",
+                             {{"action", "execute"},
+                              {"command", command},
+                              {"args", args}});
+  return resp.ok ? resp.result : nlohmann::json{{"error", resp.error}};
+}
+
+nlohmann::json PluginSystem::ListGatewayMethods() {
+  if (!sidecar_ || !sidecar_->IsRunning()) {
+    return nlohmann::json::array();
+  }
+  auto resp = sidecar_->Call("plugin.gateway_methods", {});
+  return resp.ok ? resp.result : nlohmann::json::array();
 }
 
 bool PluginSystem::IsSidecarRunning() const {

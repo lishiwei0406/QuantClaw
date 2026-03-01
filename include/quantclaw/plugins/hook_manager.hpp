@@ -52,6 +52,16 @@ struct HookRegistration {
   int priority = 0;  // higher runs first
 };
 
+// Hook execution mode — matches OpenClaw semantics.
+//   kVoid:      fire-and-forget, all handlers run in parallel
+//   kModifying: sequential, results merged via merge_patch
+//   kSync:      synchronous only on the hot path (tool_result_persist,
+//               before_message_write)
+enum class HookMode { kVoid, kModifying, kSync };
+
+// Returns the execution mode for a given hook name.
+HookMode GetHookMode(const std::string& hook_name);
+
 class SidecarManager;
 
 // Manages hook registration and execution.
@@ -69,12 +79,14 @@ class HookManager {
   // Set the sidecar for forwarding hooks to plugins
   void SetSidecar(std::shared_ptr<SidecarManager> sidecar);
 
-  // Fire a hook event. Runs all registered handlers (native + sidecar)
-  // sorted by priority (highest first). Returns merged results.
+  // Fire a hook event with automatic mode dispatch.
+  // - void hooks:      handlers run in parallel, no result
+  // - modifying hooks: handlers run sequentially, results merged
+  // - sync hooks:      handlers run sequentially, sync only
   nlohmann::json Fire(const std::string& hook_name,
                       const nlohmann::json& event);
 
-  // Fire a hook asynchronously (fire-and-forget)
+  // Fire a hook asynchronously (fire-and-forget, always uses void semantics)
   void FireAsync(const std::string& hook_name,
                  const nlohmann::json& event);
 
@@ -85,6 +97,21 @@ class HookManager {
   size_t HandlerCount(const std::string& hook_name) const;
 
  private:
+  // Mode-specific firing methods
+  nlohmann::json FireVoid(const std::string& hook_name,
+                          const std::vector<HookRegistration>& handlers,
+                          const nlohmann::json& event);
+  nlohmann::json FireModifying(const std::string& hook_name,
+                               const std::vector<HookRegistration>& handlers,
+                               const nlohmann::json& event);
+  nlohmann::json FireSync(const std::string& hook_name,
+                          const std::vector<HookRegistration>& handlers,
+                          const nlohmann::json& event);
+
+  // Forward hook to sidecar (returns empty object if no sidecar)
+  nlohmann::json ForwardToSidecar(const std::string& hook_name,
+                                  const nlohmann::json& event);
+
   std::shared_ptr<spdlog::logger> logger_;
   std::shared_ptr<SidecarManager> sidecar_;
 
