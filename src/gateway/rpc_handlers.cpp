@@ -128,7 +128,7 @@ void register_rpc_handlers(
     };
 
     auto execute_agent_request = [session_manager, agent_loop, prompt_builder, logger, &server](
-        const nlohmann::json& params, ClientConnection& client,
+        const nlohmann::json& params, ClientConnection& /*client*/,
         quantclaw::AgentEventCallback event_callback) -> AgentRequestResult
     {
         std::string session_key = params.value("sessionKey", "agent:main:main");

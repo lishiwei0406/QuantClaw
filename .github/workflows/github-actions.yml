@@ -70,46 +70,6 @@ jobs:
         name: test-results-linux-${{ matrix.compiler }}
         path: build/Testing/
 
-  build-test-windows:
-    name: Build & Test Windows (MSVC)
-    runs-on: windows-latest
-    continue-on-error: true
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Install pkg-config
-      run: choco install pkgconfiglite -y
-
-    - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgGitCommitId: '66c0373dc7fca549e5803087b9487edfe3aca0a1'
-
-    - name: Install dependencies
-      run: vcpkg install spdlog nlohmann-json curl openssl zlib --triplet x64-windows
-
-    - name: Configure CMake
-      run: |
-        cmake -B build `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_CXX_STANDARD=17 `
-          -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-
-    - name: Build
-      run: cmake --build build --config Release --parallel
-
-    - name: Run Tests
-      working-directory: build
-      run: ctest --output-on-failure --parallel -C Release
-
-    - name: Upload test results
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-windows-msvc
-        path: build/Testing/
-
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
@@ -124,6 +84,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
+        file: scripts/Dockerfile
         push: false
         tags: quantclaw:test
         cache-from: type=gha

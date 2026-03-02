@@ -33,7 +33,7 @@ struct ArgHelper {
 static std::string capture_stdout(std::function<void()> fn) {
     fflush(stdout);
     int pipefd[2];
-    pipe(pipefd);
+    if (pipe(pipefd) == -1) { return ""; }
     int saved_stdout = dup(STDOUT_FILENO);
     dup2(pipefd[1], STDOUT_FILENO);
     close(pipefd[1]);
@@ -58,7 +58,7 @@ static std::string capture_stdout(std::function<void()> fn) {
 static std::string capture_stderr(std::function<void()> fn) {
     fflush(stderr);
     int pipefd[2];
-    pipe(pipefd);
+    if (pipe(pipefd) == -1) { return ""; }
     int saved_stderr = dup(STDERR_FILENO);
     dup2(pipefd[1], STDERR_FILENO);
     close(pipefd[1]);

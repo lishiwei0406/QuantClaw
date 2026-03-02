@@ -94,7 +94,6 @@ std::vector<Message> AgentLoop::ProcessMessage(const std::string& message,
 
     // --- Auto-compaction: truncate history if too large ---
     std::vector<Message> effective_history = history;
-    bool compacted = false;
     if (agent_config_.auto_compact &&
         static_cast<int>(effective_history.size()) > agent_config_.compact_max_messages) {
         int keep = agent_config_.compact_keep_recent;
@@ -109,7 +108,6 @@ std::vector<Message> AgentLoop::ProcessMessage(const std::string& message,
                                   " earlier messages were removed. "
                                   "Your system instructions remain active. "
                                   "Refer to the system prompt for your identity and capabilities.]"});
-            compacted = true;
             logger_->info("Auto-compacted history: {} -> {} messages", total,
                           static_cast<int>(effective_history.size()));
         }
