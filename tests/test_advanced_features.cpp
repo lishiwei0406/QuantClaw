@@ -251,6 +251,20 @@ TEST_F(CronSchedulerTest, RemoveNonexistentFails) {
   EXPECT_FALSE(sched.RemoveJob("nonexistent"));
 }
 
+TEST_F(CronSchedulerTest, RemoveEmptyIdFails) {
+  quantclaw::CronScheduler sched(logger_);
+  // Add multiple jobs to ensure empty id doesn't delete all
+  auto id1 = sched.AddJob("job1", "0 * * * *", "msg1");
+  auto id2 = sched.AddJob("job2", "0 * * * *", "msg2");
+
+  // Try to remove with empty id - should fail and not delete anything
+  EXPECT_FALSE(sched.RemoveJob(""));
+
+  // Verify both jobs still exist
+  auto jobs = sched.ListJobs();
+  ASSERT_EQ(jobs.size(), 2);
+}
+
 TEST_F(CronSchedulerTest, PersistAndLoad) {
   auto filepath = (test_dir_ / "cron.json").string();
 

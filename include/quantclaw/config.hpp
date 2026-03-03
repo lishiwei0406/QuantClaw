@@ -7,32 +7,68 @@
 #include <vector>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
+#include "quantclaw/constants.hpp"
 
 namespace quantclaw {
 
 // --- Agent / LLM ---
 
 struct AgentConfig {
-    std::string model = "qwen-max";
-    int max_iterations = 15;
-    double temperature = 0.7;
-    int max_tokens = 4096;
+    std::string model = "anthropic/claude-sonnet-4-6";
+    int max_iterations = kDefaultMaxIterations;
+    double temperature = kDefaultTemperature;
+    int max_tokens = kDefaultMaxTokens;
+    int context_window = kDefaultContextWindow;  // Model context window (tokens)
     std::string thinking = "off";  // "off" | "low" | "medium" | "high"
     std::vector<std::string> fallbacks;  // Model fallback chain
 
     // Auto-compaction settings
     bool auto_compact = true;          // Enable automatic compaction
-    int compact_max_messages = 100;    // Compact when history exceeds this
-    int compact_keep_recent = 20;      // Keep this many recent messages
-    int compact_max_tokens = 100000;   // Compact when tokens exceed this
+    int compact_max_messages = kDefaultCompactMaxMessages;  // Compact when history exceeds this
+    int compact_keep_recent = kDefaultCompactKeepRecent;    // Keep this many recent messages
+    int compact_max_tokens = kDefaultCompactMaxTokens;      // Compact when tokens exceed this
 
     static AgentConfig FromJson(const nlohmann::json& json);
+
+    // Compute dynamic max iterations based on context window.
+    // OpenClaw: scales linearly from kMinMaxIterations (32) at 32K
+    // to kMaxMaxIterations (160) at 200K.
+    int DynamicMaxIterations() const;
+};
+
+// --- Model definitions (OpenClaw multi-model format) ---
+
+struct ModelCost {
+    double input = 0;
+    double output = 0;
+    double cache_read = 0;
+    double cache_write = 0;
+    static ModelCost FromJson(const nlohmann::json& json);
+};
+
+struct ModelDefinition {
+    std::string id;              // "qwen3-max"
+    std::string name;            // "Qwen3 Max"
+    bool reasoning = false;
+    std::vector<std::string> input = {"text"};  // "text", "image"
+    ModelCost cost;
+    int context_window = 0;      // 128000
+    int max_tokens = 0;          // 8192
+    static ModelDefinition FromJson(const nlohmann::json& json);
+};
+
+struct ModelEntryConfig {
+    std::string alias;           // "max", "plus", "vision"
+    nlohmann::json params;       // Provider-specific API params
+    static ModelEntryConfig FromJson(const nlohmann::json& json);
 };
 
 struct ProviderConfig {
     std::string api_key;
     std::string base_url;
-    int timeout = 30;
+    std::string api;             // "openai-completions", "anthropic-messages"
+    int timeout = kDefaultProviderTimeoutSec;
+    std::vector<ModelDefinition> models;  // Per-provider model definitions
 
     static ProviderConfig FromJson(const nlohmann::json& json);
 };
@@ -60,7 +96,7 @@ struct ToolConfig {
     std::vector<std::string> denied_paths;
     std::vector<std::string> allowed_cmds;
     std::vector<std::string> denied_cmds;
-    int timeout = 30;
+    int timeout = kDefaultToolTimeoutSec;
 
     static ToolConfig FromJson(const nlohmann::json& json);
 };
@@ -77,7 +113,7 @@ struct ToolPermissionConfig {
 struct MCPServerConfig {
     std::string name;
     std::string url;
-    int timeout = 30;
+    int timeout = kDefaultMcpTimeoutSec;
 
     static MCPServerConfig FromJson(const nlohmann::json& json);
 };
@@ -104,18 +140,18 @@ struct GatewayAuthConfig {
 
 struct GatewayControlUiConfig {
     bool enabled = true;
-    int port = 18801;  // QuantClaw HTTP/Dashboard port
+    int port = kDefaultHttpPort;  // QuantClaw HTTP/Dashboard port
 
     static GatewayControlUiConfig FromJson(const nlohmann::json& json) {
         GatewayControlUiConfig c;
         c.enabled = json.value("enabled", true);
-        c.port = json.value("port", 18801);
+        c.port = json.value("port", kDefaultHttpPort);
         return c;
     }
 };
 
 struct GatewayConfig {
-    int port = 18800;  // QuantClaw WebSocket RPC port
+    int port = kDefaultGatewayPort;  // QuantClaw WebSocket RPC port
     std::string bind = "loopback";
     GatewayAuthConfig auth;
     GatewayControlUiConfig control_ui;
@@ -129,7 +165,9 @@ struct SystemConfig {
     std::string name = "QuantClaw";
     std::string version = "0.2.0";
     std::string log_level = "info";
-    int port = 0;  // 0 = not set, use gateway.port
+    int port = 0;                // 0 = not set, use gateway.port
+    int log_retention_days = 7;  // Delete log files older than N days (0 = keep forever)
+    int log_max_size_mb = 50;    // Total log storage cap in MiB across all rotated files
 
     static SystemConfig FromJson(const nlohmann::json& json) {
         SystemConfig c;
@@ -137,6 +175,8 @@ struct SystemConfig {
         c.version = json.value("version", "0.2.0");
         c.log_level = json.value("logLevel", "info");
         c.port = json.value("port", 0);
+        c.log_retention_days = json.value("logRetentionDays", 7);
+        c.log_max_size_mb = json.value("logMaxSizeMb", 50);
         return c;
     }
 };
@@ -208,11 +248,23 @@ struct QuantClawConfig {
     // Queue config (raw JSON, consumed by CommandQueue)
     nlohmann::json queue_config;
 
+    // Models section (OpenClaw format: models.providers)
+    std::unordered_map<std::string, ProviderConfig> model_providers;
+
+    // Per-model aliases and params (agents.defaults.models)
+    std::unordered_map<std::string, ModelEntryConfig> model_entries;
+
     // Legacy compatibility
     std::unordered_map<std::string, ToolConfig> tools;
 
     static QuantClawConfig FromJson(const nlohmann::json& json);
     static QuantClawConfig LoadFromFile(const std::string& filepath);
+
+private:
+    // Internal: parse after ${VAR} expansion has already been applied
+    static QuantClawConfig FromJsonExpanded(const nlohmann::json& json);
+
+public:
 
     // Write a dot-path value (e.g. "agent.model") into the config file.
     // Creates a backup (.bak) before writing.

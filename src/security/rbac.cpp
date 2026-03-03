@@ -48,7 +48,11 @@ void RBACChecker::init_default_rules() {
         m::kOcHealth, m::kOcStatus, m::kOcModelsList,
         m::kOcSessionsPreview, m::kOcChatHistory,
         m::kSkillsStatus, m::kExecApprovals,
-        m::kCronRuns
+        m::kCronList, m::kCronRuns,
+        m::kMemoryStatus, m::kMemorySearch,
+        m::kPluginsList, m::kPluginsTools, m::kPluginsServices,
+        m::kPluginsProviders, m::kPluginsCommands, m::kPluginsGateway,
+        m::kQueueStatus
     }) {
         method_scopes_[method] = {
             scopes::kOperatorRead, scopes::kOperatorWrite,
@@ -61,8 +65,10 @@ void RBACChecker::init_default_rules() {
         m::kConfigSet, m::kConfigReload,
         m::kSessionsDelete, m::kSessionsReset, m::kSessionsPatch, m::kSessionsCompact,
         m::kModelsSet, m::kSkillsInstall,
-        m::kCronUpdate, m::kCronRun,
-        m::kExecApprovalReq
+        m::kCronAdd, m::kCronRemove, m::kCronUpdate, m::kCronRun,
+        m::kExecApprovalReq,
+        m::kPluginsCallTool,
+        m::kQueueConfigure, m::kQueueCancel, m::kQueueAbort
     }) {
         method_scopes_[method] = {
             scopes::kOperatorWrite, scopes::kOperatorAdmin
@@ -78,6 +84,20 @@ void RBACChecker::init_default_rules() {
         method_scopes_[method] = {
             scopes::kOperatorWrite, scopes::kOperatorAdmin, scopes::kNodeExecute
         };
+    }
+
+    // UI compat methods (no constants in protocol.hpp): read scope
+    const std::unordered_set<std::string> read_scopes{
+        scopes::kOperatorRead, scopes::kOperatorWrite,
+        scopes::kOperatorAdmin, scopes::kNodeRead, scopes::kNodeExecute
+    };
+    for (const auto& method : std::vector<std::string>{
+        "agent.identity.get", "node.list", "device.pair.list",
+        "logs.tail", "usage.cost", "sessions.usage",
+        "sessions.usage.timeseries", "sessions.usage.logs",
+        "cron.status", "config.schema"
+    }) {
+        method_scopes_[method] = read_scopes;
     }
 
     // Connect: always allowed (auth check is separate)

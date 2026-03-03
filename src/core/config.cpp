@@ -5,34 +5,195 @@
 #include <fstream>
 #include <filesystem>
 #include <stdexcept>
+#include <regex>
+#include <cstdlib>
 
 namespace quantclaw {
 
+// ---------------------------------------------------------------------------
+// ${VAR} environment variable substitution
+// ---------------------------------------------------------------------------
+
+static std::string substitute_env_vars(const std::string& input) {
+    static const std::regex env_re(R"(\$\{([^}]+)\})");
+    std::string result;
+    auto begin = std::sregex_iterator(input.begin(), input.end(), env_re);
+    auto end = std::sregex_iterator();
+
+    size_t last_pos = 0;
+    for (auto it = begin; it != end; ++it) {
+        auto& match = *it;
+        result.append(input, last_pos, match.position() - last_pos);
+        std::string var_name = match[1].str();
+        const char* env_val = std::getenv(var_name.c_str());
+        if (env_val) {
+            result.append(env_val);
+        }
+        // If env var not set, replace with empty string (same as OpenClaw)
+        last_pos = match.position() + match.length();
+    }
+    result.append(input, last_pos, std::string::npos);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// JSON5 preprocessing: strip comments and trailing commas
+// ---------------------------------------------------------------------------
+
+static std::string strip_json5(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+
+    size_t i = 0;
+    const size_t len = input.size();
+
+    while (i < len) {
+        // --- Inside a string literal: copy verbatim, respecting escapes ---
+        if (input[i] == '"') {
+            out += '"';
+            ++i;
+            while (i < len && input[i] != '"') {
+                if (input[i] == '\\' && i + 1 < len) {
+                    out += input[i];
+                    out += input[i + 1];
+                    i += 2;
+                } else {
+                    out += input[i];
+                    ++i;
+                }
+            }
+            if (i < len) {
+                out += '"';  // closing quote
+                ++i;
+            }
+            continue;
+        }
+
+        // --- Line comment: // ---
+        if (i + 1 < len && input[i] == '/' && input[i + 1] == '/') {
+            i += 2;
+            while (i < len && input[i] != '\n') ++i;
+            continue;
+        }
+
+        // --- Block comment: /* ... */ ---
+        if (i + 1 < len && input[i] == '/' && input[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < len && !(input[i] == '*' && input[i + 1] == '/')) ++i;
+            if (i + 1 < len) i += 2;  // skip */
+            continue;
+        }
+
+        out += input[i];
+        ++i;
+    }
+
+    // --- Strip trailing commas before } or ] ---
+    std::string result;
+    result.reserve(out.size());
+    for (size_t j = 0; j < out.size(); ++j) {
+        if (out[j] == ',') {
+            // Look ahead past whitespace for } or ]
+            size_t k = j + 1;
+            while (k < out.size() && (out[k] == ' ' || out[k] == '\t' ||
+                                       out[k] == '\n' || out[k] == '\r')) {
+                ++k;
+            }
+            if (k < out.size() && (out[k] == '}' || out[k] == ']')) {
+                continue;  // skip trailing comma
+            }
+        }
+        result += out[j];
+    }
+
+    return result;
+}
+
+static void expand_env_in_json(nlohmann::json& j) {
+    if (j.is_string()) {
+        auto& s = j.get_ref<std::string&>();
+        if (s.find("${") != std::string::npos) {
+            s = substitute_env_vars(s);
+        }
+    } else if (j.is_object()) {
+        for (auto& [key, value] : j.items()) {
+            expand_env_in_json(value);
+        }
+    } else if (j.is_array()) {
+        for (auto& element : j) {
+            expand_env_in_json(element);
+        }
+    }
+}
+
 AgentConfig AgentConfig::FromJson(const nlohmann::json& json) {
     AgentConfig config;
-    config.model = json.value("model", "qwen-max");
-    config.max_iterations = json.value("maxIterations", json.value("max_iterations", 15));
-    config.temperature = json.value("temperature", 0.7);
-    config.max_tokens = json.value("maxTokens", json.value("max_tokens", 4096));
+    // model can be a string or an object (primary/fallbacks) — only parse string here
+    if (json.contains("model") && json["model"].is_string()) {
+        config.model = json["model"].get<std::string>();
+    }
+    config.max_iterations = json.value("maxIterations", json.value("max_iterations", kDefaultMaxIterations));
+    config.temperature = json.value("temperature", kDefaultTemperature);
+    config.max_tokens = json.value("maxTokens", json.value("max_tokens", kDefaultMaxTokens));
+    config.context_window = json.value("contextWindow",
+                                       json.value("context_window", kDefaultContextWindow));
     config.thinking = json.value("thinking", "off");
     config.fallbacks = json.value("fallbacks", std::vector<std::string>{});
 
     // Compaction settings
     config.auto_compact = json.value("autoCompact", json.value("auto_compact", true));
     config.compact_max_messages = json.value("compactMaxMessages",
-                                              json.value("compact_max_messages", 100));
+                                              json.value("compact_max_messages", kDefaultCompactMaxMessages));
     config.compact_keep_recent = json.value("compactKeepRecent",
-                                             json.value("compact_keep_recent", 20));
+                                             json.value("compact_keep_recent", kDefaultCompactKeepRecent));
     config.compact_max_tokens = json.value("compactMaxTokens",
-                                            json.value("compact_max_tokens", 100000));
+                                            json.value("compact_max_tokens", kDefaultCompactMaxTokens));
     return config;
+}
+
+ModelCost ModelCost::FromJson(const nlohmann::json& json) {
+    ModelCost c;
+    c.input = json.value("input", 0.0);
+    c.output = json.value("output", 0.0);
+    c.cache_read = json.value("cacheRead", json.value("cache_read", 0.0));
+    c.cache_write = json.value("cacheWrite", json.value("cache_write", 0.0));
+    return c;
+}
+
+ModelDefinition ModelDefinition::FromJson(const nlohmann::json& json) {
+    ModelDefinition m;
+    m.id = json.value("id", "");
+    m.name = json.value("name", "");
+    m.reasoning = json.value("reasoning", false);
+    m.input = json.value("input", std::vector<std::string>{"text"});
+    if (json.contains("cost") && json["cost"].is_object()) {
+        m.cost = ModelCost::FromJson(json["cost"]);
+    }
+    m.context_window = json.value("contextWindow", json.value("context_window", 0));
+    m.max_tokens = json.value("maxTokens", json.value("max_tokens", 0));
+    return m;
+}
+
+ModelEntryConfig ModelEntryConfig::FromJson(const nlohmann::json& json) {
+    ModelEntryConfig c;
+    c.alias = json.value("alias", "");
+    if (json.contains("params") && json["params"].is_object()) {
+        c.params = json["params"];
+    }
+    return c;
 }
 
 ProviderConfig ProviderConfig::FromJson(const nlohmann::json& json) {
     ProviderConfig config;
     config.api_key = json.value("apiKey", json.value("api_key", ""));
     config.base_url = json.value("baseUrl", json.value("base_url", ""));
-    config.timeout = json.value("timeout", 30);
+    config.api = json.value("api", "");
+    config.timeout = json.value("timeout", kDefaultProviderTimeoutSec);
+    if (json.contains("models") && json["models"].is_array()) {
+        for (const auto& m : json["models"]) {
+            config.models.push_back(ModelDefinition::FromJson(m));
+        }
+    }
     return config;
 }
 
@@ -53,7 +214,7 @@ ToolConfig ToolConfig::FromJson(const nlohmann::json& json) {
     config.denied_paths = json.value("denied_paths", std::vector<std::string>{});
     config.allowed_cmds = json.value("allowed_cmds", std::vector<std::string>{});
     config.denied_cmds = json.value("denied_cmds", std::vector<std::string>{});
-    config.timeout = json.value("timeout", 30);
+    config.timeout = json.value("timeout", kDefaultToolTimeoutSec);
     return config;
 }
 
@@ -68,7 +229,7 @@ MCPServerConfig MCPServerConfig::FromJson(const nlohmann::json& json) {
     MCPServerConfig config;
     config.name = json.value("name", "");
     config.url = json.value("url", "");
-    config.timeout = json.value("timeout", 30);
+    config.timeout = json.value("timeout", kDefaultMcpTimeoutSec);
     return config;
 }
 
@@ -123,7 +284,7 @@ SkillsConfig SkillsConfig::FromJson(const nlohmann::json& json) {
 
 GatewayConfig GatewayConfig::FromJson(const nlohmann::json& json) {
     GatewayConfig config;
-    config.port = json.value("port", 18800);  // QuantClaw WebSocket RPC port
+    config.port = json.value("port", kDefaultGatewayPort);  // QuantClaw WebSocket RPC port
     config.bind = json.value("bind", "loopback");
     if (json.contains("auth")) {
         config.auth = GatewayAuthConfig::FromJson(json["auth"]);
@@ -135,6 +296,14 @@ GatewayConfig GatewayConfig::FromJson(const nlohmann::json& json) {
 }
 
 QuantClawConfig QuantClawConfig::FromJson(const nlohmann::json& json) {
+    // Expand ${VAR} references in a mutable copy
+    nlohmann::json expanded = json;
+    expand_env_in_json(expanded);
+
+    return FromJsonExpanded(expanded);
+}
+
+QuantClawConfig QuantClawConfig::FromJsonExpanded(const nlohmann::json& json) {
     QuantClawConfig config;
 
     // ================================================================
@@ -150,20 +319,20 @@ QuantClawConfig QuantClawConfig::FromJson(const nlohmann::json& json) {
 
     // ================================================================
     // OpenClaw "llm" section → agent + providers (flat, single provider)
-    // Format: { "provider": "openai", "model": "qwen-max", "apiKey": "...", "baseUrl": "...", "temperature": 0.2, "maxTokens": 2048 }
+    // Format: { "provider": "openai", "model": "anthropic/claude-sonnet-4-6", "apiKey": "...", "baseUrl": "...", "temperature": 0.2, "maxTokens": 2048 }
     // ================================================================
     if (json.contains("llm") && json["llm"].is_object()) {
         const auto& llm = json["llm"];
         std::string provider_name = llm.value("provider", "openai");
 
-        config.agent.model = llm.value("model", "qwen-max");
-        config.agent.temperature = llm.value("temperature", 0.7);
-        config.agent.max_tokens = llm.value("maxTokens", 4096);
+        config.agent.model = llm.value("model", "anthropic/claude-sonnet-4-6");
+        config.agent.temperature = llm.value("temperature", kDefaultTemperature);
+        config.agent.max_tokens = llm.value("maxTokens", kDefaultMaxTokens);
 
         ProviderConfig prov;
         prov.api_key = llm.value("apiKey", "");
         prov.base_url = llm.value("baseUrl", "");
-        prov.timeout = llm.value("timeout", 30);
+        prov.timeout = llm.value("timeout", kDefaultProviderTimeoutSec);
         config.providers[provider_name] = prov;
     }
 
@@ -190,6 +359,40 @@ QuantClawConfig QuantClawConfig::FromJson(const nlohmann::json& json) {
     if (json.contains("providers") && json["providers"].is_object()) {
         for (const auto& [key, value] : json["providers"].items()) {
             config.providers[key] = ProviderConfig::FromJson(value);
+        }
+    }
+
+    // ================================================================
+    // Models providers (OpenClaw multi-model format: models.providers)
+    // ================================================================
+    if (json.contains("models") && json["models"].is_object() &&
+        json["models"].contains("providers") && json["models"]["providers"].is_object()) {
+        for (const auto& [id, val] : json["models"]["providers"].items()) {
+            config.model_providers[id] = ProviderConfig::FromJson(val);
+        }
+    }
+
+    // ================================================================
+    // Model aliases (agents.defaults.models)
+    // ================================================================
+    if (json.contains("agents") && json["agents"].is_object() &&
+        json["agents"].contains("defaults") && json["agents"]["defaults"].is_object() &&
+        json["agents"]["defaults"].contains("models") && json["agents"]["defaults"]["models"].is_object()) {
+        for (const auto& [key, val] : json["agents"]["defaults"]["models"].items()) {
+            config.model_entries[key] = ModelEntryConfig::FromJson(val);
+        }
+    }
+
+    // ================================================================
+    // Agent model object form (agents.defaults.model as object with primary/fallbacks)
+    // ================================================================
+    if (json.contains("agents") && json["agents"].is_object() &&
+        json["agents"].contains("defaults") && json["agents"]["defaults"].is_object() &&
+        json["agents"]["defaults"].contains("model") && json["agents"]["defaults"]["model"].is_object()) {
+        const auto& model_val = json["agents"]["defaults"]["model"];
+        config.agent.model = model_val.value("primary", config.agent.model);
+        if (model_val.contains("fallbacks") && model_val["fallbacks"].is_array()) {
+            config.agent.fallbacks = model_val["fallbacks"].get<std::vector<std::string>>();
         }
     }
 
@@ -316,9 +519,10 @@ static nlohmann::json read_json_file(const std::string& filepath) {
     if (!file.is_open()) {
         throw std::runtime_error("Cannot open config file: " + filepath);
     }
-    nlohmann::json j;
-    file >> j;
-    return j;
+    std::string content((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+    std::string clean = strip_json5(content);
+    return nlohmann::json::parse(clean);
 }
 
 static void write_json_file(const std::string& filepath,
@@ -410,11 +614,25 @@ QuantClawConfig QuantClawConfig::LoadFromFile(const std::string& filepath) {
         throw std::runtime_error("Failed to open config file: " + expanded_path);
     }
 
-    nlohmann::json json;
-    file >> json;
+    std::string content((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
     file.close();
 
+    std::string clean = strip_json5(content);
+    nlohmann::json json = nlohmann::json::parse(clean);
+
     return FromJson(json);
+}
+
+int AgentConfig::DynamicMaxIterations() const {
+    // Scale linearly: 32K → 32 iterations, 200K → 160 iterations
+    if (context_window <= kContextWindow32K) return kMinMaxIterations;
+    if (context_window >= kContextWindow200K) return kMaxMaxIterations;
+
+    double ratio = static_cast<double>(context_window - kContextWindow32K)
+                 / (kContextWindow200K - kContextWindow32K);
+    return kMinMaxIterations +
+           static_cast<int>(ratio * (kMaxMaxIterations - kMinMaxIterations));
 }
 
 } // namespace quantclaw

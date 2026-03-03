@@ -15,23 +15,16 @@
 
 namespace quantclaw {
 
-/**
- * ChannelAdapterManager
- *
- * Manages channel adapter subprocesses. Each enabled channel in the config
- * gets a Python adapter script launched with environment variables:
- *   QUANTCLAW_GATEWAY_URL    — WebSocket URL to the gateway
- *   QUANTCLAW_AUTH_TOKEN     — authentication token
- *   QUANTCLAW_CHANNEL_NAME   — channel name (e.g. "discord")
- *   QUANTCLAW_CHANNEL_CONFIG — JSON string of the channel's config
- *
- * Adapters are located in:
- *   1. ~/.quantclaw/adapters/<name>_bot.py    (user-installed)
- *   2. <install_prefix>/adapters/<name>_bot.py (bundled with QuantClaw)
- *
- * The adapter connects back to the gateway via WebSocket RPC and bridges
- * messages between the platform and the agent.
- */
+// Manages channel adapter subprocesses. Each enabled channel in the config
+// gets an adapter script launched with environment variables:
+//   QUANTCLAW_GATEWAY_URL    — WebSocket URL to the gateway
+//   QUANTCLAW_AUTH_TOKEN     — authentication token
+//   QUANTCLAW_CHANNEL_NAME   — channel name (e.g. "discord")
+//   QUANTCLAW_CHANNEL_CONFIG — JSON string of the channel's config
+//
+// Adapters are located in:
+//   1. ~/.quantclaw/adapters/<name>_bot.js    (user-installed)
+//   2. <install_prefix>/adapters/<name>_bot.js (bundled with QuantClaw)
 class ChannelAdapterManager {
 public:
     ChannelAdapterManager(

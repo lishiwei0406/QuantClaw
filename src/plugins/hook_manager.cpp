@@ -10,10 +10,7 @@
 
 namespace quantclaw {
 
-// ---------------------------------------------------------------------------
 // Hook mode classification — matches OpenClaw exactly.
-// ---------------------------------------------------------------------------
-
 static const std::unordered_map<std::string, HookMode> kHookModes = {
     // Modifying hooks: sequential, results merged
     {hooks::kBeforeModelResolve, HookMode::kModifying},
@@ -52,9 +49,7 @@ HookMode GetHookMode(const std::string& hook_name) {
   return HookMode::kVoid;  // Unknown hooks default to void
 }
 
-// ---------------------------------------------------------------------------
 // HookManager
-// ---------------------------------------------------------------------------
 
 HookManager::HookManager(std::shared_ptr<spdlog::logger> logger)
     : logger_(std::move(logger)) {}
@@ -78,10 +73,6 @@ void HookManager::SetSidecar(std::shared_ptr<SidecarManager> sidecar) {
   std::lock_guard<std::mutex> lock(mu_);
   sidecar_ = std::move(sidecar);
 }
-
-// ---------------------------------------------------------------------------
-// Fire — dispatches to the correct execution mode.
-// ---------------------------------------------------------------------------
 
 nlohmann::json HookManager::Fire(const std::string& hook_name,
                                  const nlohmann::json& event) {
@@ -121,10 +112,7 @@ void HookManager::FireAsync(const std::string& hook_name,
   std::thread(std::move(self_hooks)).detach();
 }
 
-// ---------------------------------------------------------------------------
-// Void mode — fire-and-forget, parallel execution
-// ---------------------------------------------------------------------------
-
+// Void mode: fire-and-forget, parallel execution.
 nlohmann::json HookManager::FireVoid(
     const std::string& hook_name,
     const std::vector<HookRegistration>& handlers,
@@ -154,10 +142,7 @@ nlohmann::json HookManager::FireVoid(
   return nlohmann::json::object();
 }
 
-// ---------------------------------------------------------------------------
-// Modifying mode — sequential, results merged via merge_patch
-// ---------------------------------------------------------------------------
-
+// Modifying mode: sequential, results merged via merge_patch.
 nlohmann::json HookManager::FireModifying(
     const std::string& hook_name,
     const std::vector<HookRegistration>& handlers,
@@ -186,10 +171,7 @@ nlohmann::json HookManager::FireModifying(
   return merged_result;
 }
 
-// ---------------------------------------------------------------------------
-// Sync mode — synchronous only, for hot paths like tool_result_persist
-// ---------------------------------------------------------------------------
-
+// Sync mode: synchronous only, for hot paths like tool_result_persist.
 nlohmann::json HookManager::FireSync(
     const std::string& hook_name,
     const std::vector<HookRegistration>& handlers,
@@ -217,10 +199,6 @@ nlohmann::json HookManager::FireSync(
 
   return merged_result;
 }
-
-// ---------------------------------------------------------------------------
-// Sidecar forwarding
-// ---------------------------------------------------------------------------
 
 nlohmann::json HookManager::ForwardToSidecar(const std::string& hook_name,
                                               const nlohmann::json& event) {

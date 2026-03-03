@@ -50,7 +50,8 @@ namespace quantclaw::gateway {
         std::shared_ptr<quantclaw::CronScheduler> cron_scheduler = nullptr,
         std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr,
         quantclaw::PluginSystem* plugin_system = nullptr,
-        quantclaw::gateway::CommandQueue* command_queue = nullptr);
+        quantclaw::gateway::CommandQueue* command_queue = nullptr,
+        std::string log_file_path = {});
 }
 
 // Minimal mock LLM
@@ -248,8 +249,13 @@ TEST_F(RpcHandlersTest, SessionsListEmptyInitially) {
     ASSERT_TRUE(client->Connect(5000));
 
     auto result = client->Call("sessions.list", nlohmann::json::object());
-    ASSERT_TRUE(result.is_array());
-    EXPECT_EQ(result.size(), 0u);
+    // New shape: {ts, path, count, defaults, sessions:[]}
+    ASSERT_TRUE(result.is_object());
+    ASSERT_TRUE(result.contains("sessions"));
+    ASSERT_TRUE(result["sessions"].is_array());
+    EXPECT_EQ(result["sessions"].size(), 0u);
+    EXPECT_TRUE(result.contains("count"));
+    EXPECT_TRUE(result.contains("defaults"));
 
     client->Disconnect();
 }
@@ -262,20 +268,54 @@ TEST_F(RpcHandlersTest, SessionsListWithLimitOffset) {
     client->Call("agent.request", {{"message", "Hi"}, {"sessionKey", "a:1:main"}}, 10000);
     client->Call("agent.request", {{"message", "Hello"}, {"sessionKey", "b:2:main"}}, 10000);
 
-    // List all
+    // List all — new shape returns {sessions:[], count:N, ...}
     auto all = client->Call("sessions.list", {{"limit", 50}, {"offset", 0}});
-    ASSERT_TRUE(all.is_array());
-    EXPECT_GE(all.size(), 2u);
+    ASSERT_TRUE(all.is_object());
+    ASSERT_TRUE(all.contains("sessions"));
+    auto& all_sessions = all["sessions"];
+    ASSERT_TRUE(all_sessions.is_array());
+    EXPECT_GE(all_sessions.size(), 2u);
 
     // List with limit=1
     auto limited = client->Call("sessions.list", {{"limit", 1}, {"offset", 0}});
-    ASSERT_TRUE(limited.is_array());
-    EXPECT_EQ(limited.size(), 1u);
+    ASSERT_TRUE(limited.is_object());
+    EXPECT_EQ(limited["sessions"].size(), 1u);
 
     // List with offset past all sessions
     auto empty = client->Call("sessions.list", {{"limit", 10}, {"offset", 100}});
-    ASSERT_TRUE(empty.is_array());
-    EXPECT_EQ(empty.size(), 0u);
+    ASSERT_TRUE(empty.is_object());
+    EXPECT_EQ(empty["sessions"].size(), 0u);
+
+    client->Disconnect();
+}
+
+// --- sessions.list returns valid timestamps ---
+
+TEST_F(RpcHandlersTest, SessionsListUpdatedAtIsTimestamp) {
+    auto client = make_client();
+    ASSERT_TRUE(client->Connect(5000));
+
+    // Create a session
+    client->Call("agent.request", {{"message", "Hi"}, {"sessionKey", "test:main"}}, 10000);
+
+    // List sessions
+    auto result = client->Call("sessions.list", nlohmann::json::object());
+    ASSERT_TRUE(result.is_object());
+    ASSERT_TRUE(result.contains("sessions"));
+    ASSERT_TRUE(result["sessions"].is_array());
+    EXPECT_GT(result["sessions"].size(), 0u);
+
+    // Check that updatedAt is a non-zero integer (milliseconds since epoch)
+    const auto& session = result["sessions"][0];
+    ASSERT_TRUE(session.contains("updatedAt"));
+    ASSERT_TRUE(session["updatedAt"].is_number_integer());
+    int64_t updated_at_ms = session["updatedAt"].get<int64_t>();
+    EXPECT_GT(updated_at_ms, 0);
+
+    // Verify it's a reasonable timestamp (within last hour)
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    EXPECT_LT(now_ms - updated_at_ms, 3600000);  // Less than 1 hour ago
 
     client->Disconnect();
 }
@@ -471,47 +511,56 @@ TEST_F(RpcHandlersTest, ChatHistoryAlias) {
         {"sessionKey", "oc:hist:test"}
     }, 10000);
 
-    // Call chat.history (OpenClaw alias for sessions.history)
+    // Call chat.history — new shape: {messages:[], thinkingLevel:null}
     auto result = client->Call("chat.history", {{"sessionKey", "oc:hist:test"}});
 
-    ASSERT_TRUE(result.is_array());
-    EXPECT_GE(result.size(), 1u);
+    ASSERT_TRUE(result.is_object());
+    ASSERT_TRUE(result.contains("messages"));
+    ASSERT_TRUE(result["messages"].is_array());
+    EXPECT_GE(result["messages"].size(), 1u);
 
     client->Disconnect();
 }
 
-// Test models.list stub
+// Test models.list returns structured response with models array
 TEST_F(RpcHandlersTest, ModelsListStub) {
     auto client = make_client();
     ASSERT_TRUE(client->Connect(5000));
 
     auto result = client->Call("models.list");
 
-    ASSERT_TRUE(result.is_array());
-    EXPECT_GE(result.size(), 1u);
-    EXPECT_TRUE(result[0].contains("id"));
-    EXPECT_TRUE(result[0].contains("provider"));
-    EXPECT_TRUE(result[0].contains("active"));
-    EXPECT_EQ(result[0]["active"], true);
+    ASSERT_TRUE(result.is_object());
+    ASSERT_TRUE(result.contains("models"));
+    ASSERT_TRUE(result["models"].is_array());
+    EXPECT_GE(result["models"].size(), 1u);
+    EXPECT_TRUE(result["models"][0].contains("id"));
+    EXPECT_TRUE(result["models"][0].contains("active"));
+    EXPECT_TRUE(result.contains("current"));
+    EXPECT_TRUE(result.contains("aliases"));
 
     client->Disconnect();
 }
 
-// Test tools.catalog
+// Test tools.catalog — new shape: {agentId, profiles:[], groups:[{tools:[]}]}
 TEST_F(RpcHandlersTest, ToolsCatalogStub) {
     auto client = make_client();
     ASSERT_TRUE(client->Connect(5000));
 
-    auto result = client->Call("tools.catalog");
+    auto result = client->Call("tools.catalog", nlohmann::json::object());
 
-    ASSERT_TRUE(result.is_array());
-    EXPECT_GE(result.size(), 1u);  // Should have builtin tools
+    ASSERT_TRUE(result.is_object());
+    EXPECT_TRUE(result.contains("agentId"));
+    ASSERT_TRUE(result.contains("profiles"));
+    ASSERT_TRUE(result["profiles"].is_array());
+    ASSERT_TRUE(result.contains("groups"));
+    ASSERT_TRUE(result["groups"].is_array());
+    EXPECT_GE(result["groups"].size(), 1u);
 
-    // Verify schema structure
-    for (const auto& tool : result) {
-        EXPECT_TRUE(tool.contains("name"));
-        EXPECT_TRUE(tool.contains("description"));
-        EXPECT_TRUE(tool.contains("parameters"));
+    // Verify group structure
+    for (const auto& group : result["groups"]) {
+        EXPECT_TRUE(group.contains("id"));
+        EXPECT_TRUE(group.contains("tools"));
+        ASSERT_TRUE(group["tools"].is_array());
     }
 
     client->Disconnect();

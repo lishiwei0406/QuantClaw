@@ -12,7 +12,6 @@
 
 namespace quantclaw {
 
-// Helper function for CURL write callback
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
     userp->append((char*)contents, size * nmemb);
     return size * nmemb;
@@ -267,6 +266,13 @@ std::string AnthropicProvider::MakeApiRequest(
     if (http_code >= 400) {
         auto error_kind = ClassifyHttpError(
             static_cast<int>(http_code), read_buffer);
+        if (retry_capture.retry_after_seconds > 0) {
+            logger_->warn("Anthropic API HTTP {}: rate limited, retry-after={}s",
+                http_code, retry_capture.retry_after_seconds);
+        } else {
+            logger_->error("Anthropic API HTTP {}: {}", http_code,
+                read_buffer.substr(0, 256));
+        }
         ProviderError err(error_kind, static_cast<int>(http_code),
                           "Anthropic API error (HTTP " +
                           std::to_string(http_code) + "): " + read_buffer,
@@ -480,6 +486,12 @@ void AnthropicProvider::ChatCompletionStream(const ChatCompletionRequest& reques
 
     if (http_code >= 400) {
         auto error_kind = ClassifyHttpError(static_cast<int>(http_code), "");
+        if (retry_capture.retry_after_seconds > 0) {
+            logger_->warn("Anthropic streaming HTTP {}: rate limited, retry-after={}s",
+                http_code, retry_capture.retry_after_seconds);
+        } else {
+            logger_->error("Anthropic streaming HTTP {}", http_code);
+        }
         ProviderError err(error_kind, static_cast<int>(http_code),
                           "Anthropic streaming API error (HTTP " +
                           std::to_string(http_code) + ")",

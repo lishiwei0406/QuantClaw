@@ -101,6 +101,24 @@ Install the "C/C++" extension and add to `.vscode/settings.json`:
 CLion automatically detects `.clang-format` files. Enable auto-format on save:
 - Settings → Tools → Actions on Save → Reformat code
 
+#### Vim/Neovim
+```vim
+autocmd FileType cpp,hpp setlocal formatprg=clang-format
+```
+
+### Pre-commit Hook (Optional)
+
+To automatically format code before each commit:
+
+```bash
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/bash
+./scripts/format-code.sh
+git add -u
+EOF
+chmod +x .git/hooks/pre-commit
+```
+
 ## Workflow
 
 ### 1. Fork and Clone

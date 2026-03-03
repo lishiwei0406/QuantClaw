@@ -59,10 +59,6 @@ inline void close_fd(socket_t s) { ::close(s); }
 
 namespace quantclaw::platform {
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 namespace {
 
 // Unified select() wrapper — waits for readability on `sock` up to `ms`.
@@ -87,9 +83,7 @@ bool wait_readable(socket_t sock, int ms) {
 
 }  // namespace
 
-// ---------------------------------------------------------------------------
 // IpcServer
-// ---------------------------------------------------------------------------
 
 IpcServer::IpcServer(const std::string& path) : path_(path) {}
 
@@ -157,9 +151,7 @@ void IpcServer::cleanup(const std::string& /*path*/) {
   // No-op: TCP has no socket file to remove.
 }
 
-// ---------------------------------------------------------------------------
 // IpcClient
-// ---------------------------------------------------------------------------
 
 IpcClient::IpcClient(const std::string& host, int port)
     : host_(host), port_(port) {}
@@ -207,9 +199,7 @@ void IpcClient::close() {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Free functions
-// ---------------------------------------------------------------------------
 
 int ipc_write(IpcHandle h, const void* data, int len) {
   return static_cast<int>(

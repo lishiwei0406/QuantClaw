@@ -26,16 +26,16 @@
 #include "quantclaw/security/rbac.hpp"
 #include "quantclaw/security/rate_limiter.hpp"
 #include "quantclaw/gateway/command_queue.hpp"
+#include "quantclaw/plugins/plugin_system.hpp"
 #include "quantclaw/platform/process.hpp"
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <thread>
 
 // Forward declare from rpc_handlers.cpp
-namespace quantclaw {
-    class PluginSystem;
-}
 namespace quantclaw::gateway {
     void register_rpc_handlers(
         GatewayServer& server,
@@ -51,10 +51,31 @@ namespace quantclaw::gateway {
         std::shared_ptr<quantclaw::CronScheduler> cron_scheduler = nullptr,
         std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr,
         quantclaw::PluginSystem* plugin_system = nullptr,
-        gateway::CommandQueue* command_queue = nullptr);
+        gateway::CommandQueue* command_queue = nullptr,
+        std::string log_file_path = {});
 }
 
 namespace quantclaw::cli {
+
+// Removes *.log and spdlog rotated files (*.log.N) older than |days| days.
+// Called at gateway startup to prevent unbounded disk usage.
+// days == 0 disables pruning (keep forever).
+static void PruneOldLogs(const std::filesystem::path& dir, int days) {
+    if (days <= 0 || !std::filesystem::exists(dir)) return;
+    auto cutoff = std::filesystem::file_time_type::clock::now() -
+                  std::chrono::hours(24 * days);
+    std::error_code ec;
+    for (auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        // Match *.log and spdlog rotated files: *.log.1 … *.log.9
+        auto name = entry.path().filename().string();
+        if (name.find(".log") == std::string::npos) continue;
+        auto mtime = entry.last_write_time(ec);
+        if (!ec && mtime < cutoff) {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
+}
 
 GatewayCommands::GatewayCommands(std::shared_ptr<spdlog::logger> logger)
     : logger_(logger) {
@@ -97,6 +118,9 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     std::filesystem::create_directories(workspace_dir);
     std::filesystem::create_directories(sessions_dir);
 
+    // Prune stale log files on every startup to prevent unbounded disk growth.
+    PruneOldLogs(base_dir / "logs", config.system.log_retention_days);
+
     // Initialize components
     auto memory_manager = std::make_shared<quantclaw::MemoryManager>(workspace_dir, logger_);
     memory_manager->LoadWorkspaceFiles();
@@ -130,6 +154,18 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
         entry.base_url = prov.base_url;
         entry.timeout = prov.timeout;
         provider_registry->AddProvider(entry);
+    }
+
+    // Load model providers from models.providers config section
+    if (!config.model_providers.empty()) {
+        provider_registry->LoadModelProviders(config.model_providers);
+    }
+
+    // Load model aliases from agents.defaults.models
+    for (const auto& [key, entry] : config.model_entries) {
+        if (!entry.alias.empty()) {
+            provider_registry->AddAlias(entry.alias, key);
+        }
     }
 
     // Resolve the configured model to get initial provider
@@ -271,6 +307,10 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     tool_registry->SetSubagentManager(subagent_manager.get(), "main");
     agent_loop->SetSubagentManager(subagent_manager.get());
 
+    // Wire cron scheduler and session manager to tool registry
+    tool_registry->SetCronScheduler(cron_scheduler);
+    tool_registry->SetSessionManager(session_manager);
+
     // Initialize command queue
     gateway::QueueConfig queue_config;
     if (!config.queue_config.is_null()) {
@@ -337,11 +377,16 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     );
     command_queue->Start();
 
+    // Initialize plugin system
+    quantclaw::PluginSystem plugin_system(logger_);
+    plugin_system.Initialize(config, workspace_dir);
+
     // Register RPC handlers
     gateway::register_rpc_handlers(server, session_manager, agent_loop, prompt_builder,
         tool_registry, config, logger_, reload_fn, provider_registry,
         skill_loader, cron_scheduler, exec_approval_mgr,
-        nullptr, command_queue.get());
+        &plugin_system, command_queue.get(),
+        (base_dir / "logs" / "gateway.log").string());
 
     // Start server
     try {
@@ -369,15 +414,15 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
             tool_registry, config, server, logger_, reload_fn);
 
         // Mount dashboard UI if available
-        // Search order: 1) ~/.quantclaw/ui/  2) <exe_dir>/dashboard/dist/  3) <exe_dir>/../dashboard/dist/
+        // Search order: 1) ~/.quantclaw/ui/  2) <exe_dir>/ui/dist/  3) <exe_dir>/../ui/dist/
         std::string ui_dir;
         std::string candidate1 = (base_dir / "ui").string();
         if (std::filesystem::exists(candidate1)) {
             ui_dir = candidate1;
         } else {
             auto exe_dir = std::filesystem::path(platform::executable_path()).parent_path();
-            std::string candidate2 = (exe_dir / "dashboard" / "dist").string();
-            std::string candidate3 = (exe_dir.parent_path() / "dashboard" / "dist").string();
+            std::string candidate2 = (exe_dir / "ui" / "dist").string();
+            std::string candidate3 = (exe_dir.parent_path() / "ui" / "dist").string();
             if (std::filesystem::exists(candidate2)) {
                 ui_dir = candidate2;
             } else if (std::filesystem::exists(candidate3)) {
@@ -424,10 +469,11 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     logger_->info("Press Ctrl+C to stop");
 
     // Install signal handler
-    quantclaw::SignalHandler::Install([&server, &http_server, &adapter_manager, this]() {
+    quantclaw::SignalHandler::Install([&server, &http_server, &adapter_manager, &plugin_system, this]() {
         logger_->info("Shutdown signal received");
         if (adapter_manager) adapter_manager->Stop();
         if (http_server) http_server->Stop();
+        plugin_system.Shutdown();
         server.Stop();
     }, reload_fn);
 
@@ -468,6 +514,7 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
 
     if (adapter_manager) adapter_manager->Stop();
     if (http_server) http_server->Stop();
+    plugin_system.Shutdown();
     command_queue->Stop();
     server.Stop();
     logger_->info("Gateway stopped gracefully");
@@ -475,7 +522,7 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
 }
 
 int GatewayCommands::InstallCommand(const std::vector<std::string>& args) {
-    int port = 18789;
+    int port = kLegacyGatewayPort;
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--port" && i + 1 < args.size()) {
             port = std::stoi(args[++i]);
@@ -509,7 +556,7 @@ int GatewayCommands::CallCommand(const std::vector<std::string>& args) {
     }
 
     try {
-        auto client = std::make_shared<gateway::GatewayClient>(gateway_url_, "", logger_);
+        auto client = std::make_shared<gateway::GatewayClient>(gateway_url_, auth_token_, logger_);
         if (!client->Connect(3000)) {
             std::cerr << "Error: Gateway not running" << std::endl;
             return 1;
@@ -526,6 +573,8 @@ int GatewayCommands::CallCommand(const std::vector<std::string>& args) {
 }
 
 int GatewayCommands::StartCommand(const std::vector<std::string>& /*args*/) {
+    logger_->info("Note: 'gateway start' attempts to start a systemd service.");
+    logger_->info("For foreground mode, use: quantclaw gateway run");
     gateway::DaemonManager daemon(logger_);
     return daemon.Start();
 }
@@ -548,7 +597,7 @@ int GatewayCommands::StatusCommand(const std::vector<std::string>& args) {
 
     // First try connecting to the gateway via RPC
     try {
-        auto client = std::make_shared<gateway::GatewayClient>(gateway_url_, "", logger_);
+        auto client = std::make_shared<gateway::GatewayClient>(gateway_url_, auth_token_, logger_);
         if (client->Connect(3000)) {
             auto result = client->Call("gateway.status", {});
             client->Disconnect();

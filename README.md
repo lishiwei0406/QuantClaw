@@ -174,6 +174,11 @@ QuantClaw uses JSON configuration (`~/.quantclaw/quantclaw.json`):
     "allow": ["group:fs", "group:runtime"],
     "deny": []
   },
+  "system": {
+    "logLevel": "info",
+    "logRetentionDays": 7,
+    "logMaxSizeMb": 50
+  },
   "security": {
     "sandbox": { "enabled": true }
   }
@@ -181,6 +186,17 @@ QuantClaw uses JSON configuration (`~/.quantclaw/quantclaw.json`):
 ```
 
 The model field uses `provider/model-name` prefix routing. If no prefix is given, it defaults to `openai`. See `config.example.json` for a full example with all options.
+
+### Log Retention
+
+QuantClaw enforces automatic log cleanup on every gateway startup to prevent disk exhaustion.
+
+| Option | Key | Default | Description |
+|--------|-----|---------|-------------|
+| Retention period | `system.logRetentionDays` | `7` | Delete `.log` files older than N days. Set to `0` to keep forever. |
+| Total size cap | `system.logMaxSizeMb` | `50` | Maximum total log storage in MiB, split across 5 rotating files (~10 MiB each). |
+
+Log files are stored at `~/.quantclaw/logs/`. The main application log (`quantclaw.log`) is size-rotated automatically by spdlog; the gateway service log (`gateway.log`, written by systemd) is time-pruned at every startup.
 
 ### Dependencies
 
@@ -469,6 +485,52 @@ docker run -d \
 
 The Docker image uses a multi-stage build (Ubuntu 22.04) and runs as a non-root user. Configuration is persisted via the `/home/quantclaw/.quantclaw` volume. Docker files are located in the `scripts/` directory.
 
+## Testing
+
+### Unit Tests
+
+```bash
+cd build
+./quantclaw_tests
+# or
+ctest --output-on-failure
+```
+
+### Smoke Tests (Integration)
+
+The smoke test suite starts a real gateway process and exercises HTTP REST, WebSocket RPC, and concurrent connections — no API key required:
+
+```bash
+bash tests/smoke_test.sh
+```
+
+With an API key, agent conversation tests are also run:
+
+```bash
+OPENAI_API_KEY=sk-... bash tests/smoke_test.sh
+```
+
+Tests cover: lifecycle (health/status/auth), config RPCs, session RPCs, plugin RPCs, skill/cron/memory/queue/channel status, 10 concurrent WebSocket connections, and graceful shutdown. Logs are saved to `/tmp/quantclaw-smoke-ci/gateway.log`.
+
+### Manual LLM Testing
+
+```bash
+# Start gateway
+quantclaw gateway
+
+# Non-streaming agent request
+curl -X POST http://localhost:18801/api/agent/request \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!", "sessionKey": "test:manual"}'
+
+# OpenAI-compatible chat completion
+curl -X POST http://localhost:18801/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/qwen-max", "messages": [{"role": "user", "content": "Hi"}]}'
+```
+
 ## Plugin Ecosystem
 
 QuantClaw runs OpenClaw TypeScript plugins via a Node.js sidecar process. The C++ main process manages the sidecar lifecycle and communicates over **TCP loopback (127.0.0.1)** using JSON-RPC 2.0.
@@ -529,21 +591,67 @@ The JSON specification ([RFC 8259 §7](https://www.rfc-editor.org/rfc/rfc8259#se
 
 The `\n` byte (`0x0A`) therefore **only** appears as a frame delimiter between messages, never inside a JSON payload. This is the same NDJSON framing used by Redis, Docker Events, and OpenAI streaming.
 
-## Compatibility
+## OpenClaw Compatibility Status
 
-- **Workspace Files**: Compatible with OpenClaw (`SOUL.md`, `USER.md`, `MEMORY.md`)
-- **Skills**: Uses OpenClaw SKILL.md format (supports both `metadata.openclaw` and flat formats)
-- **Plugins**: Full OpenClaw plugin compatibility — tools, hooks, services, providers, commands
-- **Configuration**: JSON format compatible with OpenClaw ecosystem
-- **Protocol**: WebSocket RPC with `connect` + `chat.send` — interoperable with OpenClaw clients
+QuantClaw aims for full compatibility with [OpenClaw](https://github.com/openclaw/openclaw) (v2026.2). The table below summarizes current alignment:
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| Workspace files | **Full** | `SOUL.md`, `USER.md`, `MEMORY.md`, `SKILL.md` |
+| Skills format | **Full** | Both `metadata.openclaw` and flat formats |
+| Plugin hooks (24 types) | **Full** | All hook names and modes (void/modifying/sync) aligned |
+| Plugin Sidecar IPC | **Full** | Tools, hooks, services, providers, commands, HTTP routes, gateway methods |
+| JSONL session format | **Partial** | Basic read/write compatible; missing branching (parentId), 8 entry types, write lock |
+| Config format | **Partial** | JSON only (no JSON5 comments/trailing commas), no `$include`, no `${VAR}` env substitution |
+| CLI commands | **Partial** | Core commands present; ~28 top-level commands from OpenClaw not yet implemented |
+| Gateway RPC protocol | **Partial** | ~30 methods implemented; ~85+ OpenClaw methods pending |
+| Provider system | **Partial** | OpenAI + Anthropic + 5 OpenAI-compatible; missing OAuth, GitHub Copilot, Qwen, etc. |
+| Agent loop | **Partial** | Core loop works; missing lane-based queue, auth rotation, overflow compaction |
+| Memory search | **Partial** | BM25 keyword search only; missing hybrid vector search (embeddings, SQLite, MMR) |
+| Context management | **Partial** | Compaction + pruning work; missing multi-stage summary, budget-based pruning |
+| Channel system | **Partial** | External subprocess adapters; no built-in channels, no 7-tier routing |
+| Security / Sandbox | **Partial** | RBAC + rate limiter + sandbox; missing Docker sandbox, security audit framework |
+| MCP | **Partial** | Basic implementation; method names and transport being aligned to spec |
+| Web API | **Partial** | 16 REST routes; missing OpenResponses API, webhook endpoints |
+
+### Key Differences from OpenClaw
+
+| Aspect | OpenClaw | QuantClaw |
+|--------|----------|-----------|
+| Default gateway port | `18789` | `18800` |
+| Default HTTP port | Same as gateway | `18801` (separate) |
+| Config format | JSON5 with `$include` and `${VAR}` | Strict JSON |
+| Default model | `anthropic/claude-sonnet-4-6` | `qwen-max` |
+| Default maxTokens | `8192` | `4096` |
+| Auth profiles | Multi-profile with OAuth + rotation | Single key per provider |
+| Memory search | Hybrid (vector 0.7 + BM25 0.3) | BM25 only |
+| Plugin execution | In-process (same Node.js) | Out-of-process (sidecar via TCP) |
+| Channel adapters | 8 built-in + extensions | External subprocess scripts |
+
+### QuantClaw-Only Features
+
+| Feature | Description |
+|---------|-------------|
+| `chain` meta-tool | Declarative multi-step tool pipeline with `{{prev.result}}` templates |
+| `read`/`write`/`edit` tools | Dedicated file operation tools with sandbox validation |
+| Cross-platform TCP IPC | Unified Linux/Windows sidecar communication (no Unix sockets) |
+| C++ resource limits | `setrlimit` sandbox (CPU/memory/fsize/nproc) |
+| `viewer` RBAC role | Dedicated read-only role |
+
+For the full gap analysis, see [.claude/gap-analysis.md](.claude/gap-analysis.md).
 
 ## Roadmap
 
-Currently implemented: WebSocket/HTTP gateway, multi-provider LLM with failover, session persistence, plugin ecosystem, channel adapters, MCP support, onboarding wizard, and 711 passing tests (654 C++ + 57 sidecar).
+Currently implemented: WebSocket/HTTP gateway, multi-provider LLM with failover, session persistence, plugin ecosystem, channel adapters, MCP support, onboarding wizard, and 769 passing tests (712 C++ + 57 sidecar).
 
 Not yet implemented:
 - TUI interactive mode
 - Multiple agent profiles
+- JSON5 config with `$include` and `${VAR}` support
+- Hybrid memory search (vector + BM25)
+- Built-in channel adapters (Telegram, Discord, Slack)
+- Docker sandbox isolation
+- OAuth credential flows
 
 ## Troubleshooting
 

@@ -11,6 +11,7 @@
 #include "quantclaw/core/memory_manager.hpp"
 #include "quantclaw/tools/tool_registry.hpp"
 #include "quantclaw/providers/llm_provider.hpp"
+#include "quantclaw/providers/provider_registry.hpp"
 #include "quantclaw/core/skill_loader.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/null_sink.h>
@@ -135,10 +136,10 @@ TEST_F(ConfigTest, ParseOpenClawFormat) {
 TEST_F(ConfigTest, EmptyConfigUsesDefaults) {
     auto config = quantclaw::QuantClawConfig::FromJson({});
 
-    EXPECT_EQ(config.agent.model, "qwen-max");
-    EXPECT_EQ(config.agent.max_iterations, 15);
+    EXPECT_EQ(config.agent.model, "anthropic/claude-sonnet-4-6");
+    EXPECT_EQ(config.agent.max_iterations, 32);
     EXPECT_DOUBLE_EQ(config.agent.temperature, 0.7);
-    EXPECT_EQ(config.agent.max_tokens, 4096);
+    EXPECT_EQ(config.agent.max_tokens, 8192);
 
     EXPECT_EQ(config.gateway.port, 18800);
     EXPECT_EQ(config.gateway.bind, "loopback");
@@ -154,7 +155,7 @@ TEST_F(ConfigTest, PartialAgentConfig) {
     auto config = quantclaw::QuantClawConfig::FromJson(json_config);
 
     EXPECT_EQ(config.agent.model, "gpt-3.5-turbo");
-    EXPECT_EQ(config.agent.max_iterations, 15);
+    EXPECT_EQ(config.agent.max_iterations, 32);
     EXPECT_DOUBLE_EQ(config.agent.temperature, 0.7);
 }
 
@@ -520,4 +521,479 @@ TEST_F(ConfigTest, SetValue_OnNonexistentFile) {
     EXPECT_TRUE(std::filesystem::exists(config_path));
     auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
     EXPECT_EQ(config.agent.model, "gpt-4o");
+}
+
+// --- Environment variable substitution ---
+
+TEST_F(ConfigTest, EnvVarSubstitutionInApiKey) {
+    setenv("QC_TEST_API_KEY", "sk-from-env-42", 1);
+
+    nlohmann::json json_config = {
+        {"providers", {
+            {"openai", {
+                {"apiKey", "${QC_TEST_API_KEY}"},
+                {"baseUrl", "https://api.openai.com/v1"}
+            }}
+        }}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+    EXPECT_EQ(config.providers.at("openai").api_key, "sk-from-env-42");
+
+    unsetenv("QC_TEST_API_KEY");
+}
+
+TEST_F(ConfigTest, EnvVarSubstitutionMissing) {
+    unsetenv("QC_TEST_NONEXISTENT_VAR");
+
+    nlohmann::json json_config = {
+        {"providers", {
+            {"openai", {
+                {"apiKey", "${QC_TEST_NONEXISTENT_VAR}"}
+            }}
+        }}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+    // Missing env var → empty string
+    EXPECT_EQ(config.providers.at("openai").api_key, "");
+}
+
+TEST_F(ConfigTest, EnvVarSubstitutionMultiple) {
+    setenv("QC_TEST_HOST", "api.example.com", 1);
+    setenv("QC_TEST_VERSION", "v2", 1);
+
+    nlohmann::json json_config = {
+        {"providers", {
+            {"openai", {
+                {"baseUrl", "https://${QC_TEST_HOST}/${QC_TEST_VERSION}"}
+            }}
+        }}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+    EXPECT_EQ(config.providers.at("openai").base_url, "https://api.example.com/v2");
+
+    unsetenv("QC_TEST_HOST");
+    unsetenv("QC_TEST_VERSION");
+}
+
+TEST_F(ConfigTest, EnvVarSubstitutionInNestedArrays) {
+    setenv("QC_TEST_SCOPE", "admin.read", 1);
+
+    nlohmann::json json_config = {
+        {"tools", {
+            {"allow", {"group:fs", "${QC_TEST_SCOPE}"}}
+        }}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+    ASSERT_EQ(config.tools_permission.allow.size(), 2u);
+    EXPECT_EQ(config.tools_permission.allow[1], "admin.read");
+
+    unsetenv("QC_TEST_SCOPE");
+}
+
+// --- JSON5 support (comments + trailing commas) ---
+
+TEST_F(ConfigTest, Json5LineComments) {
+    auto config_path = (test_dir_ / "json5_comments.json").string();
+    std::ofstream f(config_path);
+    f << R"({
+  // This is a line comment
+  "agent": {
+    "model": "gpt-4o", // inline comment
+    "maxIterations": 10
+  }
+})";
+    f.close();
+
+    auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
+    EXPECT_EQ(config.agent.model, "gpt-4o");
+    EXPECT_EQ(config.agent.max_iterations, 10);
+}
+
+TEST_F(ConfigTest, Json5BlockComments) {
+    auto config_path = (test_dir_ / "json5_block.json").string();
+    std::ofstream f(config_path);
+    f << R"({
+  /* block comment */
+  "agent": {
+    "model": "claude-3", /* another block */
+    "maxIterations": 5
+  }
+})";
+    f.close();
+
+    auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
+    EXPECT_EQ(config.agent.model, "claude-3");
+}
+
+TEST_F(ConfigTest, Json5TrailingCommas) {
+    auto config_path = (test_dir_ / "json5_trailing.json").string();
+    std::ofstream f(config_path);
+    f << R"({
+  "agent": {
+    "model": "gpt-4o",
+    "maxIterations": 10,
+  },
+  "providers": {
+    "openai": {
+      "apiKey": "sk-test",
+    },
+  },
+})";
+    f.close();
+
+    auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
+    EXPECT_EQ(config.agent.model, "gpt-4o");
+    EXPECT_EQ(config.providers.at("openai").api_key, "sk-test");
+}
+
+TEST_F(ConfigTest, Json5CommentsAndTrailingCommasCombined) {
+    auto config_path = (test_dir_ / "json5_combined.json").string();
+    std::ofstream f(config_path);
+    f << R"({
+  // Main config
+  "agent": {
+    "model": "gpt-4o", // model selection
+    "maxIterations": 10,
+    /* "temperature": 0.5, -- disabled for now */
+  },
+  "providers": {
+    "openai": {
+      "apiKey": "sk-test", // TODO: use env var
+      "baseUrl": "https://api.openai.com/v1",
+    },
+  },
+})";
+    f.close();
+
+    auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
+    EXPECT_EQ(config.agent.model, "gpt-4o");
+    EXPECT_EQ(config.agent.max_iterations, 10);
+    EXPECT_EQ(config.providers.at("openai").api_key, "sk-test");
+}
+
+TEST_F(ConfigTest, Json5UrlsInStringsNotStripped) {
+    auto config_path = (test_dir_ / "json5_urls.json").string();
+    std::ofstream f(config_path);
+    f << R"({
+  "providers": {
+    "openai": {
+      "baseUrl": "https://api.openai.com/v1"
+    }
+  }
+})";
+    f.close();
+
+    auto config = quantclaw::QuantClawConfig::LoadFromFile(config_path);
+    EXPECT_EQ(config.providers.at("openai").base_url, "https://api.openai.com/v1");
+}
+
+// --- ModelDefinition / ModelCost / ModelEntryConfig parsing ---
+
+TEST_F(ConfigTest, ModelCostFromJson) {
+    nlohmann::json j = {
+        {"input", 0.02}, {"output", 0.06},
+        {"cacheRead", 0.001}, {"cacheWrite", 0.002}
+    };
+    auto cost = quantclaw::ModelCost::FromJson(j);
+    EXPECT_DOUBLE_EQ(cost.input, 0.02);
+    EXPECT_DOUBLE_EQ(cost.output, 0.06);
+    EXPECT_DOUBLE_EQ(cost.cache_read, 0.001);
+    EXPECT_DOUBLE_EQ(cost.cache_write, 0.002);
+}
+
+TEST_F(ConfigTest, ModelCostDefaults) {
+    auto cost = quantclaw::ModelCost::FromJson(nlohmann::json::object());
+    EXPECT_DOUBLE_EQ(cost.input, 0.0);
+    EXPECT_DOUBLE_EQ(cost.output, 0.0);
+    EXPECT_DOUBLE_EQ(cost.cache_read, 0.0);
+    EXPECT_DOUBLE_EQ(cost.cache_write, 0.0);
+}
+
+TEST_F(ConfigTest, ModelDefinitionFromJson) {
+    nlohmann::json j = {
+        {"id", "qwen3-max"}, {"name", "Qwen3 Max"},
+        {"reasoning", false}, {"input", {"text"}},
+        {"cost", {{"input", 0.02}, {"output", 0.06}}},
+        {"contextWindow", 128000}, {"maxTokens", 8192}
+    };
+    auto m = quantclaw::ModelDefinition::FromJson(j);
+    EXPECT_EQ(m.id, "qwen3-max");
+    EXPECT_EQ(m.name, "Qwen3 Max");
+    EXPECT_FALSE(m.reasoning);
+    ASSERT_EQ(m.input.size(), 1u);
+    EXPECT_EQ(m.input[0], "text");
+    EXPECT_DOUBLE_EQ(m.cost.input, 0.02);
+    EXPECT_DOUBLE_EQ(m.cost.output, 0.06);
+    EXPECT_EQ(m.context_window, 128000);
+    EXPECT_EQ(m.max_tokens, 8192);
+}
+
+TEST_F(ConfigTest, ModelDefinitionWithImageInput) {
+    nlohmann::json j = {
+        {"id", "qwen-vl"}, {"name", "Qwen VL"},
+        {"input", {"text", "image"}}, {"reasoning", true}
+    };
+    auto m = quantclaw::ModelDefinition::FromJson(j);
+    ASSERT_EQ(m.input.size(), 2u);
+    EXPECT_EQ(m.input[1], "image");
+    EXPECT_TRUE(m.reasoning);
+}
+
+TEST_F(ConfigTest, ModelEntryConfigFromJson) {
+    nlohmann::json j = {
+        {"alias", "max"},
+        {"params", {{"temperature", 0.5}}}
+    };
+    auto e = quantclaw::ModelEntryConfig::FromJson(j);
+    EXPECT_EQ(e.alias, "max");
+    EXPECT_TRUE(e.params.contains("temperature"));
+}
+
+TEST_F(ConfigTest, ProviderConfigWithModels) {
+    nlohmann::json j = {
+        {"apiKey", "test-key"},
+        {"baseUrl", "https://example.com/v1"},
+        {"api", "openai-completions"},
+        {"models", {
+            {{"id", "model-a"}, {"name", "Model A"}, {"contextWindow", 32000}},
+            {{"id", "model-b"}, {"name", "Model B"}, {"reasoning", true}}
+        }}
+    };
+    auto p = quantclaw::ProviderConfig::FromJson(j);
+    EXPECT_EQ(p.api_key, "test-key");
+    EXPECT_EQ(p.api, "openai-completions");
+    ASSERT_EQ(p.models.size(), 2u);
+    EXPECT_EQ(p.models[0].id, "model-a");
+    EXPECT_EQ(p.models[0].context_window, 32000);
+    EXPECT_EQ(p.models[1].id, "model-b");
+    EXPECT_TRUE(p.models[1].reasoning);
+}
+
+// --- OpenClaw models.providers format ---
+
+TEST_F(ConfigTest, ModelsProvidersSection) {
+    nlohmann::json json_config = {
+        {"models", {
+            {"providers", {
+                {"qwen", {
+                    {"baseUrl", "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+                    {"apiKey", "test-key"},
+                    {"api", "openai-completions"},
+                    {"models", {
+                        {{"id", "qwen3-max"}, {"name", "Qwen3 Max"}, {"contextWindow", 128000}, {"maxTokens", 8192}},
+                        {{"id", "qwen-plus"}, {"name", "Qwen Plus"}, {"contextWindow", 128000}}
+                    }}
+                }}
+            }}
+        }},
+        {"gateway", {{"port", 18850}, {"auth", {{"mode", "none"}}}}}
+    };
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+
+    ASSERT_EQ(config.model_providers.count("qwen"), 1u);
+    auto& qwen = config.model_providers.at("qwen");
+    EXPECT_EQ(qwen.api_key, "test-key");
+    EXPECT_EQ(qwen.api, "openai-completions");
+    ASSERT_EQ(qwen.models.size(), 2u);
+    EXPECT_EQ(qwen.models[0].id, "qwen3-max");
+    EXPECT_EQ(qwen.models[0].context_window, 128000);
+    EXPECT_EQ(qwen.models[1].id, "qwen-plus");
+}
+
+// --- agents.defaults.models alias parsing ---
+
+TEST_F(ConfigTest, AgentsDefaultsModelsAliases) {
+    nlohmann::json json_config = {
+        {"agents", {
+            {"defaults", {
+                {"models", {
+                    {"qwen/qwen3-max", {{"alias", "max"}}},
+                    {"qwen/qwen-plus", {{"alias", "plus"}}}
+                }}
+            }}
+        }}
+    };
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+
+    ASSERT_EQ(config.model_entries.size(), 2u);
+    EXPECT_EQ(config.model_entries.at("qwen/qwen3-max").alias, "max");
+    EXPECT_EQ(config.model_entries.at("qwen/qwen-plus").alias, "plus");
+}
+
+// --- agents.defaults.model object form (primary/fallbacks) ---
+
+TEST_F(ConfigTest, AgentsDefaultsModelObjectForm) {
+    nlohmann::json json_config = {
+        {"agents", {
+            {"defaults", {
+                {"model", {
+                    {"primary", "qwen/qwen3-max"},
+                    {"fallbacks", {"qwen/qwen-plus", "qwen/qwen-turbo"}}
+                }}
+            }}
+        }}
+    };
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+
+    EXPECT_EQ(config.agent.model, "qwen/qwen3-max");
+    ASSERT_EQ(config.agent.fallbacks.size(), 2u);
+    EXPECT_EQ(config.agent.fallbacks[0], "qwen/qwen-plus");
+    EXPECT_EQ(config.agent.fallbacks[1], "qwen/qwen-turbo");
+}
+
+// --- Combined OpenClaw config test ---
+
+TEST_F(ConfigTest, FullOpenClawMultiModelConfig) {
+    nlohmann::json json_config = {
+        {"models", {
+            {"providers", {
+                {"qwen", {
+                    {"baseUrl", "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+                    {"apiKey", "test"},
+                    {"api", "openai-completions"},
+                    {"models", {
+                        {{"id", "qwen3-max"}, {"name", "Qwen3 Max"}, {"reasoning", false},
+                         {"input", {"text"}}, {"cost", {{"input", 0.02}, {"output", 0.06}}},
+                         {"contextWindow", 128000}, {"maxTokens", 8192}}
+                    }}
+                }}
+            }}
+        }},
+        {"agents", {
+            {"defaults", {
+                {"model", {{"primary", "qwen/qwen3-max"}, {"fallbacks", {"qwen/qwen-plus"}}}},
+                {"models", {
+                    {"qwen/qwen3-max", {{"alias", "max"}}},
+                    {"qwen/qwen-plus", {{"alias", "plus"}}}
+                }}
+            }}
+        }},
+        {"gateway", {{"port", 18850}, {"auth", {{"mode", "none"}}}}}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+
+    // Model providers
+    ASSERT_EQ(config.model_providers.count("qwen"), 1u);
+    EXPECT_EQ(config.model_providers.at("qwen").models[0].id, "qwen3-max");
+
+    // Agent model (from object form)
+    EXPECT_EQ(config.agent.model, "qwen/qwen3-max");
+    ASSERT_EQ(config.agent.fallbacks.size(), 1u);
+    EXPECT_EQ(config.agent.fallbacks[0], "qwen/qwen-plus");
+
+    // Aliases
+    EXPECT_EQ(config.model_entries.at("qwen/qwen3-max").alias, "max");
+    EXPECT_EQ(config.model_entries.at("qwen/qwen-plus").alias, "plus");
+
+    // Gateway
+    EXPECT_EQ(config.gateway.port, 18850);
+    EXPECT_EQ(config.gateway.auth.mode, "none");
+}
+
+// --- Model catalog generation ---
+
+TEST_F(ConfigTest, ModelCatalogFromProviderRegistry) {
+    auto null_sink = std::make_shared<spdlog::sinks::null_sink_mt>();
+    auto logger = std::make_shared<spdlog::logger>("catalog_test", null_sink);
+
+    quantclaw::ProviderRegistry registry(logger);
+    registry.RegisterBuiltinFactories();
+
+    std::unordered_map<std::string, quantclaw::ProviderConfig> model_providers;
+    quantclaw::ProviderConfig prov;
+    prov.api_key = "test";
+    prov.base_url = "https://example.com/v1";
+    prov.api = "openai-completions";
+    prov.models.push_back(quantclaw::ModelDefinition::FromJson({
+        {"id", "model-a"}, {"name", "Model A"}, {"contextWindow", 128000}, {"reasoning", true}
+    }));
+    prov.models.push_back(quantclaw::ModelDefinition::FromJson({
+        {"id", "model-b"}, {"name", "Model B"}, {"contextWindow", 32000}
+    }));
+    model_providers["test-provider"] = prov;
+
+    registry.LoadModelProviders(model_providers);
+
+    auto catalog = registry.GetModelCatalog();
+    ASSERT_EQ(catalog.size(), 2u);
+    EXPECT_EQ(catalog[0].id, "model-a");
+    EXPECT_EQ(catalog[0].provider, "test-provider");
+    EXPECT_EQ(catalog[0].context_window, 128000);
+    EXPECT_TRUE(catalog[0].reasoning);
+    EXPECT_EQ(catalog[1].id, "model-b");
+}
+
+TEST_F(ConfigTest, ModelCatalogEntryToJson) {
+    quantclaw::ProviderRegistry::ModelCatalogEntry ce;
+    ce.id = "test-model";
+    ce.name = "Test Model";
+    ce.provider = "test";
+    ce.context_window = 64000;
+    ce.reasoning = true;
+    ce.input = {"text", "image"};
+    ce.max_tokens = 4096;
+    ce.cost.input = 0.01;
+    ce.cost.output = 0.03;
+
+    auto j = ce.ToJson();
+    EXPECT_EQ(j["id"], "test-model");
+    EXPECT_EQ(j["name"], "Test Model");
+    EXPECT_EQ(j["provider"], "test");
+    EXPECT_EQ(j["contextWindow"], 64000);
+    EXPECT_TRUE(j["reasoning"].get<bool>());
+    ASSERT_EQ(j["input"].size(), 2u);
+    EXPECT_EQ(j["maxTokens"], 4096);
+    EXPECT_DOUBLE_EQ(j["cost"]["input"].get<double>(), 0.01);
+}
+
+TEST_F(ConfigTest, LoadModelProvidersMergesWithExisting) {
+    auto null_sink = std::make_shared<spdlog::sinks::null_sink_mt>();
+    auto logger = std::make_shared<spdlog::logger>("merge_test", null_sink);
+
+    quantclaw::ProviderRegistry registry(logger);
+    registry.RegisterBuiltinFactories();
+
+    // Add an existing provider entry
+    quantclaw::ProviderEntry existing;
+    existing.id = "qwen";
+    existing.api_key = "existing-key";
+    existing.base_url = "https://existing.com/v1";
+    registry.AddProvider(existing);
+
+    // Load model providers that overlap
+    std::unordered_map<std::string, quantclaw::ProviderConfig> model_providers;
+    quantclaw::ProviderConfig prov;
+    prov.api = "openai-completions";
+    prov.models.push_back(quantclaw::ModelDefinition::FromJson({
+        {"id", "qwen3-max"}, {"name", "Qwen3 Max"}
+    }));
+    model_providers["qwen"] = prov;
+
+    registry.LoadModelProviders(model_providers);
+
+    // Should merge: existing api_key preserved, models added
+    auto* entry = registry.GetEntry("qwen");
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->api_key, "existing-key");
+    EXPECT_EQ(entry->api, "openai-completions");
+    ASSERT_EQ(entry->models.size(), 1u);
+    EXPECT_EQ(entry->models[0].id, "qwen3-max");
+}
+
+TEST_F(ConfigTest, EnvVarNoSubstitutionWithoutDollarBrace) {
+    nlohmann::json json_config = {
+        {"providers", {
+            {"openai", {
+                {"apiKey", "literal-string-no-vars"}
+            }}
+        }}
+    };
+
+    auto config = quantclaw::QuantClawConfig::FromJson(json_config);
+    EXPECT_EQ(config.providers.at("openai").api_key, "literal-string-no-vars");
 }
