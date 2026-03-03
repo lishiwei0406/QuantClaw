@@ -15,6 +15,8 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <random>
+#include <sstream>
 #include <thread>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -32,6 +34,14 @@ static void json_error(httplib::Response& res, int status, const std::string& me
     res.status = status;
     nlohmann::json err = {{"error", message}, {"status", status}};
     res.set_content(err.dump(), "application/json");
+}
+
+static std::string generate_openai_session_key() {
+    static std::mt19937 gen(std::random_device{}());
+    static std::uniform_int_distribution<uint64_t> dist;
+    std::ostringstream ss;
+    ss << "v1-chat:" << std::hex << dist(gen);
+    return ss.str();
 }
 
 // --- Route registration ---
@@ -521,6 +531,16 @@ void register_api_routes(
                 bool stream = body.value("stream", false);
                 std::string model = body.value("model", "default");
 
+                // Extract or generate session key (supports both body field and X-Session-Key header)
+                std::string session_key;
+                if (body.contains("sessionKey") && body["sessionKey"].is_string()) {
+                    session_key = body["sessionKey"].get<std::string>();
+                } else if (req.has_header("X-Session-Key")) {
+                    session_key = req.get_header_value("X-Session-Key");
+                } else {
+                    session_key = generate_openai_session_key();
+                }
+
                 if (stream) {
                     // Streaming response (SSE format matching OpenAI)
                     struct StreamState {
@@ -606,15 +626,15 @@ void register_api_routes(
                     );
                 } else {
                     // Non-streaming response
-                    // Track usage delta for this request
+                    // Track usage delta for this request (per-session to avoid race conditions)
                     auto usage_acc = agent_loop->GetUsageAccumulator();
-                    auto usage_before = usage_acc ? usage_acc->GetGlobal() :
+                    auto usage_before = usage_acc ? usage_acc->GetSession(session_key) :
                         quantclaw::UsageAccumulator::Stats{};
 
                     auto new_messages = agent_loop->ProcessMessage(
                         user_message, llm_history, system_prompt);
 
-                    auto usage_after = usage_acc ? usage_acc->GetGlobal() :
+                    auto usage_after = usage_acc ? usage_acc->GetSession(session_key) :
                         quantclaw::UsageAccumulator::Stats{};
 
                     std::string final_response;

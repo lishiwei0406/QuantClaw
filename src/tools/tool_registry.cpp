@@ -156,8 +156,9 @@ void ToolRegistry::RegisterBuiltinTools() {
 
     // ---- web_search ----
     register_tool("web_search",
-        "Search the web. Uses Brave Search (BRAVE_API_KEY), Perplexity (PERPLEXITY_API_KEY), "
-        "or Grok (XAI_API_KEY). Returns titles, URLs, and snippets.",
+        "Search the web. Cascade: Brave (BRAVE_API_KEY), Tavily (TAVILY_API_KEY), "
+        "Perplexity (PERPLEXITY_API_KEY), DuckDuckGo (free, no key), Grok (XAI_API_KEY). "
+        "Returns titles, URLs, and snippets.",
         nlohmann::json::parse(R"JSON({"type":"object","properties":{"query":{"type":"string","description":"Search query"},"count":{"type":"integer","description":"Number of results (1-10, default 5)"},"freshness":{"type":"string","description":"Time filter: day, week, month, year"}},"required":["query"]})JSON"),
         [this](const nlohmann::json& p) { return web_search_tool(p); });
 
@@ -937,6 +938,42 @@ std::string ToolRegistry::web_search_tool(const nlohmann::json& params) {
                                {"results", results}}.dump();
     }
 
+    // --- Tavily Search ---
+    const char* tavily_key = std::getenv("TAVILY_API_KEY");
+    if (tavily_key && *tavily_key) {
+        nlohmann::json body = {
+            {"api_key",      tavily_key},
+            {"query",        query},
+            {"max_results",  count},
+            {"search_depth", "basic"}
+        };
+        std::string body_str = body.dump();
+
+        httplib::SSLClient cli("api.tavily.com");
+        cli.set_default_headers({{"Content-Type", "application/json"}});
+        cli.set_connection_timeout(10);
+        cli.set_read_timeout(15);
+
+        auto res = cli.Post("/search", body_str, "application/json");
+        if (!res) throw std::runtime_error("Tavily: connection failed");
+        if (res->status != 200)
+            throw std::runtime_error("Tavily HTTP " + std::to_string(res->status));
+
+        auto j = nlohmann::json::parse(res->body);
+        nlohmann::json results = nlohmann::json::array();
+        if (j.contains("results")) {
+            for (const auto& r : j["results"]) {
+                nlohmann::json item;
+                item["title"]       = r.value("title", "");
+                item["url"]         = r.value("url", "");
+                item["description"] = r.value("content", "");
+                results.push_back(item);
+            }
+        }
+        return nlohmann::json{{"provider", "tavily"}, {"query", query},
+                               {"results", results}}.dump();
+    }
+
     // --- Perplexity Sonar (OpenAI-compatible) ---
     if (perp_key && *perp_key) {
         nlohmann::json body = {
@@ -974,6 +1011,86 @@ std::string ToolRegistry::web_search_tool(const nlohmann::json& params) {
         results.push_back(perp_item);
         return nlohmann::json{{"provider", "perplexity"}, {"query", query},
                                {"results", results}}.dump();
+    }
+
+    // --- DuckDuckGo HTML scraping (no API key needed) ---
+    {
+        std::string ddg_path = "/html/?q=" + url_encode(query);
+
+        httplib::SSLClient cli("html.duckduckgo.com");
+        cli.set_default_headers({
+            {"User-Agent", "QuantClaw/1.0"},
+            {"Accept",     "text/html"}
+        });
+        cli.set_connection_timeout(10);
+        cli.set_read_timeout(15);
+
+        auto res = cli.Get(ddg_path);
+        if (res && res->status == 200 && !res->body.empty()) {
+            nlohmann::json results = nlohmann::json::array();
+            // Extract result links: <a rel="nofollow" class="result__a" href="URL">TITLE</a>
+            std::regex link_re(R"REGEX(<a\s+[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>)REGEX",
+                               std::regex::icase);
+            // Extract snippets: <a class="result__snippet" ...>DESCRIPTION</a>
+            std::regex snippet_re(R"REGEX(<a\s+[^>]*class="result__snippet"[^>]*>([\s\S]*?)</a>)REGEX",
+                                  std::regex::icase);
+            std::vector<std::pair<std::string, std::string>> links; // url, title
+            std::vector<std::string> snippets;
+
+            auto link_begin = std::sregex_iterator(res->body.begin(), res->body.end(), link_re);
+            auto link_end   = std::sregex_iterator();
+            for (auto it = link_begin; it != link_end; ++it) {
+                std::string url   = (*it)[1].str();
+                std::string title = html_to_text((*it)[2].str());
+                // DuckDuckGo wraps URLs in a redirect; extract actual URL if present
+                if (url.find("uddg=") != std::string::npos) {
+                    size_t uddg = url.find("uddg=") + 5;
+                    size_t amp  = url.find('&', uddg);
+                    std::string encoded = (amp != std::string::npos) ?
+                        url.substr(uddg, amp - uddg) : url.substr(uddg);
+                    // Simple URL-decode for %XX
+                    std::ostringstream decoded;
+                    for (size_t i = 0; i < encoded.size(); ++i) {
+                        if (encoded[i] == '%' && i + 2 < encoded.size()) {
+                            int hi = 0;
+                            if (std::sscanf(encoded.substr(i + 1, 2).c_str(), "%x", &hi) == 1) {
+                                decoded << static_cast<char>(hi);
+                                i += 2;
+                            } else {
+                                decoded << encoded[i];
+                            }
+                        } else if (encoded[i] == '+') {
+                            decoded << ' ';
+                        } else {
+                            decoded << encoded[i];
+                        }
+                    }
+                    url = decoded.str();
+                }
+                links.emplace_back(url, title);
+            }
+
+            auto snip_begin = std::sregex_iterator(res->body.begin(), res->body.end(), snippet_re);
+            auto snip_end   = std::sregex_iterator();
+            for (auto it = snip_begin; it != snip_end; ++it) {
+                snippets.push_back(html_to_text((*it)[1].str()));
+            }
+
+            int n = std::min(count, static_cast<int>(links.size()));
+            for (int i = 0; i < n; ++i) {
+                nlohmann::json item;
+                item["title"]       = links[i].second;
+                item["url"]         = links[i].first;
+                item["description"] = (i < static_cast<int>(snippets.size())) ?
+                    snippets[i] : "";
+                results.push_back(item);
+            }
+            if (!results.empty()) {
+                return nlohmann::json{{"provider", "duckduckgo"}, {"query", query},
+                                       {"results", results}}.dump();
+            }
+        }
+        // If DuckDuckGo failed or returned no results, fall through to Grok
     }
 
     // --- xAI Grok ---
@@ -1016,7 +1133,8 @@ std::string ToolRegistry::web_search_tool(const nlohmann::json& params) {
     }
 
     throw std::runtime_error(
-        "web_search: no API key found. Set BRAVE_API_KEY, PERPLEXITY_API_KEY, or XAI_API_KEY.");
+        "web_search: all providers failed. Set BRAVE_API_KEY, TAVILY_API_KEY, "
+        "PERPLEXITY_API_KEY, or XAI_API_KEY. DuckDuckGo (no key) was also tried.");
 }
 
 // ---------------------------------------------------------------------------

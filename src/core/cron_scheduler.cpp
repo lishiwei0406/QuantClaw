@@ -231,6 +231,8 @@ std::string CronScheduler::AddJob(const std::string& name,
 }
 
 bool CronScheduler::RemoveJob(const std::string& id) {
+  if (id.empty()) return false;  // Guard against empty id
+
   std::lock_guard<std::mutex> lock(mu_);
   // Accept exact match or unambiguous prefix match (e.g. first 8 chars)
   auto matcher = [&id](const CronJob& j) {
