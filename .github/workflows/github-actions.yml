@@ -65,7 +65,7 @@ jobs:
 
     - name: Upload test results
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-results-linux-${{ matrix.compiler }}
         path: build/Testing/
@@ -167,7 +167,7 @@ jobs:
 
     - name: Upload logs on failure
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: smoke-test-logs
         path: /tmp/quantclaw-smoke-ci/
