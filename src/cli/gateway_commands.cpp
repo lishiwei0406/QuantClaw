@@ -51,7 +51,8 @@ namespace quantclaw::gateway {
         std::shared_ptr<quantclaw::CronScheduler> cron_scheduler = nullptr,
         std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr,
         quantclaw::PluginSystem* plugin_system = nullptr,
-        gateway::CommandQueue* command_queue = nullptr);
+        gateway::CommandQueue* command_queue = nullptr,
+        std::string log_file_path = {});
 }
 
 namespace quantclaw::cli {
@@ -384,7 +385,8 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     gateway::register_rpc_handlers(server, session_manager, agent_loop, prompt_builder,
         tool_registry, config, logger_, reload_fn, provider_registry,
         skill_loader, cron_scheduler, exec_approval_mgr,
-        &plugin_system, command_queue.get());
+        &plugin_system, command_queue.get(),
+        (base_dir / "logs" / "gateway.log").string());
 
     // Start server
     try {

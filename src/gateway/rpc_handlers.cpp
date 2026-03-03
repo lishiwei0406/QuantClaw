@@ -41,7 +41,8 @@ void register_rpc_handlers(
     std::shared_ptr<quantclaw::CronScheduler> cron_scheduler,
     std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr,
     quantclaw::PluginSystem* plugin_system,
-    CommandQueue* command_queue)
+    CommandQueue* command_queue,
+    std::string log_file_path)
 {
     // --- gateway.health ---
     server.RegisterHandler(methods::kGatewayHealth,
@@ -1529,33 +1530,23 @@ void register_rpc_handlers(
     );
 
     // --- logs.tail ---
-    // Return recent lines from the spdlog output file (if any).
+    // Return recent lines from the gateway log file.
+    // log_file_path is provided by the caller (derived from base_dir, not from env),
+    // so there is no user-controlled path injection (CodeQL cpp/path-injection).
     server.RegisterHandler("logs.tail",
-        [logger](const nlohmann::json& params, ClientConnection& /*client*/) -> nlohmann::json {
+        [logger, log_file_path](const nlohmann::json& params, ClientConnection& /*client*/) -> nlohmann::json {
             int req_limit  = params.value("limit",    200);
             int max_bytes  = params.value("maxBytes", 512 * 1024);
             long long cursor = params.value("cursor", 0LL);
             (void)max_bytes;
             (void)cursor;
 
-            // Attempt to read the log file if QUANTCLAW_LOG_FILE env is set.
-            // Canonicalize the path to prevent path traversal (CodeQL cpp/path-injection).
-            std::string log_file;
-            const char* env_log = std::getenv("QUANTCLAW_LOG_FILE");
-            if (env_log) {
-                std::error_code ec;
-                auto canonical = std::filesystem::weakly_canonical(env_log, ec);
-                if (!ec && canonical.is_absolute()) {
-                    log_file = canonical.string();
-                }
-            }
-
             nlohmann::json lines = nlohmann::json::array();
             long long new_cursor = cursor;
             bool truncated = false;
 
-            if (!log_file.empty() && std::filesystem::exists(log_file)) {
-                std::ifstream ifs(log_file);
+            if (!log_file_path.empty() && std::filesystem::exists(log_file_path)) {
+                std::ifstream ifs(log_file_path);
                 if (ifs.is_open()) {
                     std::vector<std::string> all_lines;
                     std::string line;
@@ -1573,7 +1564,7 @@ void register_rpc_handlers(
             }
 
             return {
-                {"file",      log_file},
+                {"file",      log_file_path},
                 {"cursor",    new_cursor},
                 {"lines",     lines},
                 {"truncated", truncated}

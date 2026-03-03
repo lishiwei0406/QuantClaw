@@ -201,7 +201,7 @@ echo "--- Phase 2: Config RPCs ---"
 
 # S2.1 config.get (full)
 CFG=$(ws_rpc rpc config.get)
-if [ $? -eq 0 ] && echo "$CFG" | jq -e '.agent' >/dev/null 2>&1; then
+if [ $? -eq 0 ] && echo "$CFG" | jq -e '.config.agent' >/dev/null 2>&1; then
     pass "S2.1 WS config.get (full)"
 else
     fail "S2.1 WS config.get (full)" "got: $CFG"

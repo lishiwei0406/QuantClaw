@@ -37,16 +37,19 @@ std::vector<Message> ContextPruner::Prune(
   if (opts.context_window > 0) {
     int budget = static_cast<int>(opts.context_window * opts.prune_target_ratio)
                  - opts.max_tokens;
-    int current_tokens = EstimateTokens(history);
-
-    if (current_tokens > budget) {
-      // Over budget: aggressively prune
-      // Scale down max_tool_result_chars and protect_recent
-      double over_ratio = static_cast<double>(current_tokens) / budget;
-      effective.max_tool_result_chars =
-          std::max(200, static_cast<int>(opts.max_tool_result_chars / over_ratio));
-      effective.protect_recent = std::max(1, static_cast<int>(opts.protect_recent / over_ratio));
-      effective.hard_prune_after = std::max(3, static_cast<int>(opts.hard_prune_after / over_ratio));
+    if (budget > 0) {
+      int current_tokens = EstimateTokens(history);
+      if (current_tokens > budget) {
+        // Over budget: aggressively prune
+        // Scale down max_tool_result_chars and protect_recent
+        double over_ratio = static_cast<double>(current_tokens) / budget;
+        effective.max_tool_result_chars =
+            std::max(200, static_cast<int>(opts.max_tool_result_chars / over_ratio));
+        effective.protect_recent =
+            std::max(1, static_cast<int>(opts.protect_recent / over_ratio));
+        effective.hard_prune_after =
+            std::max(3, static_cast<int>(opts.hard_prune_after / over_ratio));
+      }
     }
   }
 

@@ -50,7 +50,8 @@ namespace quantclaw::gateway {
         std::shared_ptr<quantclaw::CronScheduler> cron_scheduler = nullptr,
         std::shared_ptr<quantclaw::ExecApprovalManager> exec_approval_mgr = nullptr,
         quantclaw::PluginSystem* plugin_system = nullptr,
-        quantclaw::gateway::CommandQueue* command_queue = nullptr);
+        quantclaw::gateway::CommandQueue* command_queue = nullptr,
+        std::string log_file_path = {});
 }
 
 // Minimal mock LLM
