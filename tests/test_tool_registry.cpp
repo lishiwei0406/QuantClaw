@@ -211,11 +211,11 @@ TEST_F(ToolRegistryTest, RegisterChainTool) {
 
 TEST_F(ToolRegistryTest, SchemaCountMatchesRegistered) {
     auto schemas = tool_registry_->GetToolSchemas();
-    EXPECT_EQ(schemas.size(), 5u);  // read, write, edit, exec, message
+    EXPECT_EQ(schemas.size(), 12u);  // read, write, edit, exec, bash, apply_patch, process, message, web_search, web_fetch, memory_search, memory_get
 
     tool_registry_->RegisterChainTool();
     schemas = tool_registry_->GetToolSchemas();
-    EXPECT_EQ(schemas.size(), 6u);
+    EXPECT_EQ(schemas.size(), 13u);
 }
 
 // --- schema has name and description ---

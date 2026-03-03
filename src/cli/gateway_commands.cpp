@@ -281,6 +281,10 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
     tool_registry->SetSubagentManager(subagent_manager.get(), "main");
     agent_loop->SetSubagentManager(subagent_manager.get());
 
+    // Wire cron scheduler and session manager to tool registry
+    tool_registry->SetCronScheduler(cron_scheduler);
+    tool_registry->SetSessionManager(session_manager);
+
     // Initialize command queue
     gateway::QueueConfig queue_config;
     if (!config.queue_config.is_null()) {

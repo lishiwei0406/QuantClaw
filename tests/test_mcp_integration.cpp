@@ -69,7 +69,7 @@ TEST_F(MCPIntegrationTest, ListTools) {
 
     EXPECT_TRUE(response.contains("result"));
     EXPECT_TRUE(response["result"].contains("tools"));
-    EXPECT_EQ(response["result"]["tools"].size(), 5u); // read, write, edit, exec, message
+    EXPECT_EQ(response["result"]["tools"].size(), 12u); // read, write, edit, exec, bash, apply_patch, process, message, web_search, web_fetch, memory_search, memory_get
 }
 
 TEST_F(MCPIntegrationTest, CallReadFileTool) {
