@@ -24,29 +24,28 @@ template <typename T> Result<T> Err(T def) { return {false, std::move(def)}; }
 
 }  // namespace
 
-// ── QC_TRY ───────────────────────────────────────────────────────────────────
+// ── QC_TRY_ASSIGN (cross-platform) ──────────────────────────────────────────
 
 static Result<int> double_if_ok(bool succeed) {
-    int v = QC_TRY(succeed ? Ok(21) : Err(0));
+    QC_TRY_ASSIGN(v, succeed ? Ok(21) : Err(0));
     return Ok(v * 2);
 }
 
-TEST(QcTry, PropagatesErrorOnFailure) {
+TEST(QcTryAssign, PropagatesErrorOnFailure) {
     auto r = double_if_ok(false);
     EXPECT_FALSE(static_cast<bool>(r));
 }
 
-TEST(QcTry, UnwrapsValueOnSuccess) {
+TEST(QcTryAssign, UnwrapsValueOnSuccess) {
     auto r = double_if_ok(true);
     ASSERT_TRUE(static_cast<bool>(r));
     EXPECT_EQ(*r, 42);
 }
 
-TEST(QcTry, ChainedCalls) {
-    // Return type must match the error wrapper type for propagation to compile.
+TEST(QcTryAssign, ChainedCalls) {
     auto chain = [](bool a, bool b) -> Result<int> {
-        int x = QC_TRY(a ? Ok(10) : Err(0));
-        int y = QC_TRY(b ? Ok(20) : Err(0));
+        QC_TRY_ASSIGN(x, a ? Ok(10) : Err(0));
+        QC_TRY_ASSIGN(y, b ? Ok(20) : Err(0));
         return Ok(x + y);
     };
 
@@ -56,6 +55,24 @@ TEST(QcTry, ChainedCalls) {
     ASSERT_TRUE(static_cast<bool>(r));
     EXPECT_EQ(*r, 30);
 }
+
+// ── QC_TRY (GCC/Clang expression-style) ─────────────────────────────────────
+#if defined(__GNUC__) || defined(__clang__)
+
+static Result<int> double_if_ok_expr(bool succeed) {
+    int v = QC_TRY(succeed ? Ok(21) : Err(0));
+    return Ok(v * 2);
+}
+
+TEST(QcTry, ExpressionStyleWorks) {
+    auto fail = double_if_ok_expr(false);
+    EXPECT_FALSE(static_cast<bool>(fail));
+    auto ok = double_if_ok_expr(true);
+    ASSERT_TRUE(static_cast<bool>(ok));
+    EXPECT_EQ(*ok, 42);
+}
+
+#endif  // __GNUC__ || __clang__
 
 // ── Defer ────────────────────────────────────────────────────────────────────
 

@@ -48,14 +48,14 @@ static std::string generate_openai_session_key() {
 
 void register_api_routes(
     WebServer& server,
-    std::shared_ptr<quantclaw::SessionManager> session_manager,
-    std::shared_ptr<quantclaw::AgentLoop> agent_loop,
-    std::shared_ptr<quantclaw::PromptBuilder> prompt_builder,
-    std::shared_ptr<quantclaw::ToolRegistry> /*tool_registry*/,
+    const std::shared_ptr<quantclaw::SessionManager>& session_manager,
+    const std::shared_ptr<quantclaw::AgentLoop>& agent_loop,
+    const std::shared_ptr<quantclaw::PromptBuilder>& prompt_builder,
+    const std::shared_ptr<quantclaw::ToolRegistry>& /*tool_registry*/,
     const quantclaw::QuantClawConfig& config,
     quantclaw::gateway::GatewayServer& gateway_server,
-    std::shared_ptr<spdlog::logger> logger,
-    std::function<void()> reload_fn,
+    const std::shared_ptr<spdlog::logger>& logger,
+    const std::function<void()>& reload_fn,
     quantclaw::PluginSystem* plugin_system)
 {
     // --- GET /api/health ---

@@ -289,7 +289,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
-          cmake ninja-build clang-14 \
+          cmake ninja-build clang-14 libclang-rt-14-dev \
           libspdlog-dev nlohmann-json3-dev \
           libcurl4-openssl-dev libssl-dev
 

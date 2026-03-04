@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(quantclaw LANGUAGES CXX)
+project(quantclaw VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -145,6 +145,20 @@ else()
     )
 endif()
 
+# ── Build-time metadata ────────────────────────────────────────────────────
+# Git commit hash (short, 7 chars).  Falls back to "unknown" outside a repo.
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE QC_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT QC_GIT_COMMIT)
+    set(QC_GIT_COMMIT "unknown")
+endif()
+string(TIMESTAMP QC_BUILD_DATE "%Y-%m-%d")
+
 add_library(quantclaw_core STATIC ${QUANTCLAW_CORE_SOURCES})
 
 target_include_directories(quantclaw_core
@@ -152,6 +166,12 @@ target_include_directories(quantclaw_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_compile_definitions(quantclaw_core PUBLIC
+    QUANTCLAW_VERSION="${PROJECT_VERSION}"
+    QUANTCLAW_BUILD_DATE="${QC_BUILD_DATE}"
+    QUANTCLAW_GIT_COMMIT="${QC_GIT_COMMIT}"
 )
 
 target_link_libraries(quantclaw_core

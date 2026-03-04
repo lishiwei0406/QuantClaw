@@ -3,6 +3,7 @@
 
 #include "quantclaw/gateway/gateway_server.hpp"
 #include "quantclaw/gateway/protocol.hpp"
+#include "quantclaw/constants.hpp"
 #include "quantclaw/session/session_manager.hpp"
 #include "quantclaw/core/agent_loop.hpp"
 #include "quantclaw/core/prompt_builder.hpp"
@@ -52,7 +53,7 @@ void register_rpc_handlers(
             return {
                 {"status", "ok"},
                 {"uptime", server.GetUptimeSeconds()},
-                {"version", "0.2.0"}
+                {"version", quantclaw::kVersion}
             };
         }
     );
@@ -67,7 +68,7 @@ void register_rpc_handlers(
                 {"connections", server.GetConnectionCount()},
                 {"uptime", server.GetUptimeSeconds()},
                 {"sessions", sessions.size()},
-                {"version", "0.2.0"}
+                {"version", quantclaw::kVersion}
             };
         }
     );
@@ -649,7 +650,7 @@ void register_rpc_handlers(
             return {
                 {"status", "ok"},
                 {"uptime", server.GetUptimeSeconds()},
-                {"version", "0.2.0"}
+                {"version", quantclaw::kVersion}
             };
         }
     );
@@ -680,7 +681,7 @@ void register_rpc_handlers(
                 {"port",        server.GetPort()},
                 {"connections", server.GetConnectionCount()},
                 {"uptime",      server.GetUptimeSeconds()},
-                {"version",     "0.2.0"},
+                {"version",     quantclaw::kVersion},
                 // OpenClaw compatibility fields
                 {"heartbeat", {
                     {"defaultAgentId", "default"},

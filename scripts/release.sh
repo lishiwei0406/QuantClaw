@@ -22,8 +22,11 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+YELLOW='\033[1;33m'
+
 info() { echo -e "${CYAN}[release]${NC} $*"; }
 success() { echo -e "${GREEN}[release]${NC} $*"; }
+warn() { echo -e "${YELLOW}[release]${NC} $*"; }
 die()  { echo -e "${RED}[release] ERROR:${NC} $*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
