@@ -712,13 +712,13 @@ QuantClaw 目标是完全兼容 [OpenClaw](https://github.com/openclaw/openclaw)
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| 工作空间文件 | **部分** | `SOUL.md`、`MEMORY.md`、`SKILL.md` 读写；`AGENTS.md`、`TOOLS.md` onboard 时自动创建；缺 `IDENTITY.md`、`HEARTBEAT.md`、`USER.md` 自动创建 |
+| 工作空间文件 | **完全** | 全部 7 个文件在 onboard 时自动创建：`SOUL.md`、`MEMORY.md`、`SKILL.md`、`IDENTITY.md`、`HEARTBEAT.md`、`USER.md`、`AGENTS.md` + `TOOLS.md` |
 | 技能格式 | **完全** | 支持 `metadata.openclaw` 嵌套格式和扁平格式 |
 | 插件钩子（24 种） | **完全** | 全部 24 种 hook name 和 mode（void/modifying/sync）对齐 |
 | 插件 Sidecar IPC | **完全** | 工具、钩子、服务、Provider、命令、HTTP 路由、网关方法 |
-| JSONL 会话格式 | **部分** | `message` + content block（text/tool_use/tool_result/thinking）兼容；缺 `thinking_level_change`、`custom_message` entry type、`parentId` 分支、write lock |
+| JSONL 会话格式 | **部分** | `message`、`thinking_level_change`、`custom_message` entry type 均已实现；`parentId` 分支和 write lock 待实现 |
 | 配置格式 | **部分** | 已支持 JSON5（注释、尾逗号）和 `${VAR}` 环境变量替换；`$include` 指令待实现 |
-| CLI 命令 | **部分** | 核心命令已有（`gateway`、`agent`、`sessions`、`config`、`models`、`channels`、`health`、`status`）；缺 `account`、`device`、`plugins`、`run`、`eval` |
+| CLI 命令 | **部分** | 核心命令已有（`gateway`、`agent`、`sessions`、`config`、`models`、`channels`、`plugins`、`health`、`status`、`run`、`eval`）；缺 `account`、`device` |
 | Gateway RPC 协议 | **部分** | 已实现 57 个 method（约 45% 覆盖）；缺 device pairing、node 管理、OAuth 流程、扩展 cron/usage RPC |
 | Provider 系统 | **部分** | OpenAI + Anthropic 完整实现；Ollama + Gemini 已注册但为 stub；缺 Mistral、Bedrock、Azure、Grok、Perplexity、LM Studio、Together 等（约覆盖 OpenClaw 12% 广度） |
 | Agent 循环 | **部分** | 动态迭代（32–160）、上下文守卫、工具截断、overflow compaction retry、budget pruning、子 agent 派生均已实现；多阶段压缩和 `parentId` 会话分支待实现 |
@@ -726,7 +726,7 @@ QuantClaw 目标是完全兼容 [OpenClaw](https://github.com/openclaw/openclaw)
 | 上下文管理 | **部分** | Budget-based compaction + pruning 已实现；多阶段（chunk + merge）待实现 |
 | 频道系统 | **部分** | 外部 subprocess 适配器；0 个内置 channel（OpenClaw 有 38+）；无 7-tier routing |
 | 安全 / 沙箱 | **部分** | RBAC + rate limiter + `setrlimit` 沙箱 + exec approval；缺 Docker sandbox、security audit |
-| MCP | **部分** | 工具集成完整（`tools/list`、`tools/call`，stdio + SSE transport）；缺 MCP resources、MCP prompts、sampling API |
+| MCP | **部分** | 工具 + Resources + Prompts 均已实现（`tools/list`、`tools/call`、`resources/list`、`resources/read`、`prompts/list`、`prompts/get`）；缺 sampling API |
 | Web API | **部分** | 16 个 REST 路由；缺 OpenResponses API（`/v1/responses`）、webhook 端点 |
 
 ### 与 OpenClaw 的主要差异
@@ -754,22 +754,20 @@ QuantClaw 目标是完全兼容 [OpenClaw](https://github.com/openclaw/openclaw)
 
 ## 路线图
 
-当前已实现：WebSocket/HTTP 网关、多 Provider LLM 与故障转移、会话持久化、插件生态（24 种 hook、Sidecar TCP IPC）、频道 subprocess 适配器、MCP 工具集成、Onboarding 向导、JSON5 配置、`${VAR}` 环境变量替换、动态 Agent 迭代（32–160）、Budget-based 上下文管理、子 agent 派生、RBAC + exec approval 沙箱，共通过 872 项 C++ 测试。
+当前已实现：WebSocket/HTTP 网关、多 Provider LLM 与故障转移、会话持久化、插件生态（24 种 hook、Sidecar TCP IPC）、频道 subprocess 适配器、MCP 工具 + Resources + Prompts、Onboarding 向导（自动创建全部 7 个工作空间文件）、JSON5 配置、`${VAR}` 环境变量替换、动态 Agent 迭代（32–160）、Budget-based 上下文管理、子 agent 派生、RBAC + exec approval 沙箱、真实浏览器 CDP（WebSocket）、`thinking_level_change`/`custom_message` JSONL entry type、`run`/`eval`/`plugins` CLI 命令，共通过 **886 项** C++ 测试。
 
 尚未实现：
 - TUI 交互式终端界面
-- `account`、`device`、`plugins`、`run`、`eval` CLI 命令
+- `account`、`device` CLI 命令
 - 配置 `$include` 指令（模块化配置文件）
 - 多 auth profile + OAuth 认证流程
 - 会话 `parentId` 分支（树状会话结构）
-- JSONL `thinking_level_change` / `custom_message` entry type
 - Hybrid 记忆搜索（向量 embedding + BM25、SQLite 后端）
 - 多阶段上下文压缩（chunk + merge 策略）
 - 内置频道适配器（OpenClaw 有 38+：Discord、Slack、Teams、Telegram、Matrix 等）
 - 更多 LLM Provider（Gemini、Mistral、Bedrock、Azure、Grok、Perplexity、Ollama 等）
-- MCP resources 和 MCP prompts（目前仅支持 tools）
+- MCP sampling API
 - Docker 沙箱隔离（per-session 容器）
-- Onboard 时自动创建全部 7 个工作空间文件（`IDENTITY.md`、`HEARTBEAT.md`、`USER.md`）
 
 ## 故障排除
 

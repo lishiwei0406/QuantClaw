@@ -3,14 +3,17 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
-#include <unordered_map>
+#include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <ixwebsocket/IXWebSocket.h>
 #include "quantclaw/platform/process.hpp"
 
 namespace quantclaw {
@@ -58,6 +61,10 @@ struct BrowserToolConfig {
   int viewport_width = 1280;
   int viewport_height = 720;
   int navigation_timeout_ms = 30000;
+  // Local DevTools port (used when mode=kLocal).
+  // WARNING: Only one BrowserSession per port is supported at a time.
+  // If running multiple sessions concurrently, each must use a unique port.
+  int cdp_debug_port = 9222;
   SsrfPolicy ssrf_policy;
 
   static BrowserToolConfig FromJson(const nlohmann::json& j);
@@ -103,12 +110,21 @@ class BrowserSession {
   mutable std::mutex mu_;
   platform::ProcessId browser_pid_ = platform::kInvalidPid;
 
+  // CDP WebSocket connection
+  ix::WebSocket cdp_ws_;
+  std::atomic<int> cdp_id_{0};
+  std::mutex cdp_mu_;
+  std::condition_variable cdp_cv_;
+  std::unordered_map<int, nlohmann::json> cdp_responses_;
+
   // Launch local browser
   bool launch_local();
   // Connect to remote CDP
   bool connect_remote();
+  // Establish WebSocket CDP connection to ws_url
+  bool connect_cdp_websocket(const std::string& ws_url);
 
-  // CDP communication
+  // CDP communication (sends over WebSocket, waits for response)
   std::string cdp_send(const std::string& method,
                         const nlohmann::json& params = {});
 

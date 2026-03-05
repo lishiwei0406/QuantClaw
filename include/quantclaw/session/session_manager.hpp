@@ -108,6 +108,18 @@ public:
     // Append a full SessionMessage
     void AppendMessage(const std::string& session_key, const SessionMessage& msg);
 
+    // Append a thinking_level_change entry (OpenClaw JSONL compat)
+    void AppendThinkingLevelChange(const std::string& session_key,
+                                    const std::string& thinking_level);
+
+    // Append a custom_message entry (OpenClaw JSONL compat)
+    // custom_type: arbitrary string identifier; content/display/details are optional JSON
+    void AppendCustomMessage(const std::string& session_key,
+                              const std::string& custom_type,
+                              const nlohmann::json& content = nlohmann::json::array(),
+                              const nlohmann::json& display = nlohmann::json::object(),
+                              const nlohmann::json& details = nlohmann::json::object());
+
     // Get session history
     std::vector<SessionMessage> GetHistory(const std::string& session_key,
                                             int max_messages = -1) const;

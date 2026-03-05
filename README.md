@@ -713,13 +713,13 @@ QuantClaw aims for full compatibility with [OpenClaw](https://github.com/opencla
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| Workspace files | **Partial** | `SOUL.md`, `MEMORY.md`, `SKILL.md` read/written; `AGENTS.md`, `TOOLS.md` auto-created on onboard; missing auto-creation of `IDENTITY.md`, `HEARTBEAT.md`, `USER.md` |
+| Workspace files | **Full** | All 7 files auto-created on onboard: `SOUL.md`, `MEMORY.md`, `SKILL.md`, `IDENTITY.md`, `HEARTBEAT.md`, `USER.md`, `AGENTS.md` + `TOOLS.md` |
 | Skills format | **Full** | Both `metadata.openclaw` and flat formats |
 | Plugin hooks (24 types) | **Full** | All 24 hook names and modes (void/modifying/sync) aligned |
 | Plugin Sidecar IPC | **Full** | Tools, hooks, services, providers, commands, HTTP routes, gateway methods |
-| JSONL session format | **Partial** | `message` + content blocks (text/tool_use/tool_result/thinking) compatible; missing `thinking_level_change`, `custom_message` entry types, `parentId` branching, write lock |
+| JSONL session format | **Partial** | `message`, `thinking_level_change`, `custom_message` entry types implemented; `parentId` branching and write lock pending |
 | Config format | **Partial** | JSON5 (comments, trailing commas) and `${VAR}` env substitution supported; `$include` directive pending |
-| CLI commands | **Partial** | Core commands present (`gateway`, `agent`, `sessions`, `config`, `models`, `channels`, `health`, `status`); missing `account`, `device`, `plugins`, `run`, `eval` |
+| CLI commands | **Partial** | Core commands present (`gateway`, `agent`, `sessions`, `config`, `models`, `channels`, `plugins`, `health`, `status`, `run`, `eval`); missing `account`, `device` |
 | Gateway RPC protocol | **Partial** | 57 methods implemented (~45% of OpenClaw surface); missing device pairing, node management, OAuth flows, extended cron/usage RPCs |
 | Provider system | **Partial** | OpenAI + Anthropic fully implemented; Ollama + Gemini registered but stub; missing Mistral, Bedrock, Azure, Grok, Perplexity, LM Studio, Together, etc. (~12% of OpenClaw provider breadth) |
 | Agent loop | **Partial** | Dynamic iterations (32–160), context guard, tool truncation, overflow compaction retry, budget pruning, subagent spawning all implemented; multi-stage compaction and `parentId` session branching pending |
@@ -727,7 +727,7 @@ QuantClaw aims for full compatibility with [OpenClaw](https://github.com/opencla
 | Context management | **Partial** | Budget-based compaction + pruning implemented; multi-stage (chunk + merge) pending |
 | Channel system | **Partial** | External subprocess adapters; 0 built-in channels (OpenClaw has 38+); no 7-tier routing |
 | Security / Sandbox | **Partial** | RBAC + rate limiter + `setrlimit` sandbox + exec approval; missing Docker sandbox, security audit framework |
-| MCP | **Partial** | Tools integration complete (`tools/list`, `tools/call`, stdio + SSE transport); missing MCP resources, MCP prompts, sampling API |
+| MCP | **Partial** | Tools + Resources + Prompts implemented (`tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`); missing sampling API |
 | Web API | **Partial** | 16 REST routes; missing OpenResponses API (`/v1/responses`), webhook endpoints |
 
 ### Key Differences from OpenClaw
@@ -755,22 +755,20 @@ QuantClaw aims for full compatibility with [OpenClaw](https://github.com/opencla
 
 ## Roadmap
 
-Currently implemented: WebSocket/HTTP gateway, multi-provider LLM with failover, session persistence, plugin ecosystem (24 hook types, sidecar TCP IPC), channel subprocess adapters, MCP tools integration, onboarding wizard, JSON5 config, `${VAR}` env substitution, dynamic agent iterations (32–160), budget-based context management, subagent spawning, RBAC + exec approval sandbox — 872 passing tests (872 C++).
+Currently implemented: WebSocket/HTTP gateway, multi-provider LLM with failover, session persistence, plugin ecosystem (24 hook types, sidecar TCP IPC), channel subprocess adapters, MCP tools + resources + prompts, onboarding wizard (all 7 workspace files), JSON5 config, `${VAR}` env substitution, dynamic agent iterations (32–160), budget-based context management, subagent spawning, RBAC + exec approval sandbox, real browser CDP (WebSocket), `thinking_level_change` / `custom_message` JSONL entry types, `run` + `eval` + `plugins` CLI commands — **886 passing tests** (886 C++).
 
 Not yet implemented:
 - TUI interactive mode
-- `account`, `device`, `plugins`, `run`, `eval` CLI commands
+- `account`, `device` CLI commands
 - Config `$include` directive (modular config files)
 - Multiple auth profiles with OAuth credential flows
 - Session `parentId` branching (tree-shaped sessions)
-- JSONL `thinking_level_change` / `custom_message` entry types
 - Hybrid memory search (vector embeddings + BM25, SQLite backend)
 - Multi-stage context compaction (chunk + merge strategy)
 - Built-in channel adapters (OpenClaw has 38+: Discord, Slack, Teams, Telegram, Matrix, etc.)
 - Additional LLM providers (Gemini, Mistral, Bedrock, Azure, Grok, Perplexity, Ollama, etc.)
-- MCP resources and MCP prompts (tools-only currently)
+- MCP sampling API
 - Docker sandbox isolation (per-session container)
-- Auto-creation of all 7 workspace files on onboard (`IDENTITY.md`, `HEARTBEAT.md`, `USER.md`)
 
 ## Troubleshooting
 

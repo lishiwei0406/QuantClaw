@@ -99,20 +99,40 @@ TEST(BrowserSessionTest, CreateAndClose) {
   session->close();  // Should not crash
 }
 
-TEST(BrowserSessionTest, RemoteConnection) {
+TEST(BrowserSessionTest, RemoteConnectionUnreachable) {
+  // A fake/unreachable CDP URL should fail to connect (graceful failure)
   auto session = std::make_shared<BrowserSession>(make_logger("browser"));
   BrowserToolConfig config;
   config.mode = BrowserToolConfig::Mode::kRemote;
-  config.remote_cdp_url = "ws://localhost:9222/devtools/browser/fake-id";
+  config.remote_cdp_url = "ws://127.0.0.1:9999/devtools/browser/fake-id";
 
   bool ok = session->initialize(config);
-  EXPECT_TRUE(ok);
-  EXPECT_TRUE(session->is_connected());
-  EXPECT_EQ(session->connection().cdp_url, config.remote_cdp_url);
-  EXPECT_TRUE(session->connection().is_remote);
-
-  session->close();
+  EXPECT_FALSE(ok);            // real connect attempt fails for unreachable URL
   EXPECT_FALSE(session->is_connected());
+  EXPECT_TRUE(session->connection().is_remote);  // set before connect attempt
+
+  session->close();  // must not crash
+}
+
+TEST(BrowserSessionTest, NavigateGracefulWhenUnconnected) {
+  // Verify navigate gracefully handles unconnected state:
+  // cdp_send returns "{}" (not empty) so navigate returns true (no crash).
+  auto session = std::make_shared<BrowserSession>(make_logger("browser"));
+  BrowserToolConfig config;
+  config.mode = BrowserToolConfig::Mode::kRemote;
+  config.remote_cdp_url = "ws://127.0.0.1:9999/fake";
+  session->initialize(config);  // returns false — session not connected
+
+  // With default (empty) SSRF policy, public URLs pass the SSRF check.
+  // cdp_send returns "{}" gracefully when not connected, so navigate returns true.
+  EXPECT_TRUE(session->navigate("https://example.com"));
+
+  // SSRF-blocked URLs still require the SSRF policy to be set explicitly.
+  config.ssrf_policy = SsrfPolicy::default_policy();
+  auto session2 = std::make_shared<BrowserSession>(make_logger("browser2"));
+  session2->initialize(config);
+  EXPECT_FALSE(session2->navigate("http://localhost:8080/admin"));
+  EXPECT_TRUE(session2->navigate("https://example.com"));
 }
 
 TEST(BrowserSessionTest, RemoteRequiresUrl) {
@@ -129,15 +149,15 @@ TEST(BrowserSessionTest, NavigationSsrfBlock) {
   auto session = std::make_shared<BrowserSession>(make_logger("browser"));
   BrowserToolConfig config;
   config.mode = BrowserToolConfig::Mode::kRemote;
-  config.remote_cdp_url = "ws://test:9222";
+  config.remote_cdp_url = "ws://127.0.0.1:9999/fake";
   config.ssrf_policy = SsrfPolicy::default_policy();
-  session->initialize(config);
+  session->initialize(config);  // will fail for unreachable URL; that's OK for SSRF testing
 
-  // localhost should be blocked
+  // SSRF-blocked URLs are rejected before CDP is called, regardless of connection state
   EXPECT_FALSE(session->navigate("http://localhost:8080/admin"));
   EXPECT_FALSE(session->navigate("http://127.0.0.1/api"));
 
-  // Public URLs should pass (CDP call is stubbed)
+  // Public URLs pass the SSRF check; cdp_send gracefully returns "{}" when not connected
   EXPECT_TRUE(session->navigate("https://example.com"));
 }
 
@@ -163,8 +183,8 @@ TEST(BrowserToolSchemaTest, ExecutorCreation) {
   auto session = std::make_shared<BrowserSession>(make_logger("browser"));
   BrowserToolConfig config;
   config.mode = BrowserToolConfig::Mode::kRemote;
-  config.remote_cdp_url = "ws://test:9222";
-  session->initialize(config);
+  config.remote_cdp_url = "ws://127.0.0.1:9999/fake";
+  session->initialize(config);  // unreachable; graceful fallback tested below
 
   auto executor = browser_tools::create_executor(session);
   ASSERT_TRUE(executor);

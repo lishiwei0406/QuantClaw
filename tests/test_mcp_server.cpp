@@ -149,3 +149,139 @@ TEST_F(MCPServerTest, UnknownMethod) {
     EXPECT_TRUE(response.contains("error"));
     EXPECT_EQ(response["error"]["code"], -32601);
 }
+
+TEST_F(MCPServerTest, InitializeAdvertisesResourcesAndPrompts) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 10}, {"method", "initialize"}, {"params", {}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_TRUE(response["result"]["capabilities"].contains("resources"));
+    EXPECT_TRUE(response["result"]["capabilities"].contains("prompts"));
+}
+
+// --- MCP Resources ---
+
+TEST_F(MCPServerTest, ListResourcesEmpty) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 5}, {"method", "resources/list"}, {"params", {}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_TRUE(response["result"]["resources"].is_array());
+    EXPECT_EQ(response["result"]["resources"].size(), 0);
+}
+
+TEST_F(MCPServerTest, RegisterAndListResource) {
+    quantclaw::mcp::MCPResource res;
+    res.uri = "file:///workspace/MEMORY.md";
+    res.name = "Agent Memory";
+    res.description = "Persistent memory file";
+    res.mime_type = "text/markdown";
+    res.reader = []() { return "# Memory\nsome content"; };
+    server_->RegisterResource(std::move(res));
+
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 6}, {"method", "resources/list"}, {"params", {}}
+    };
+    auto response = server_->HandleRequest(request);
+    auto& resources = response["result"]["resources"];
+    ASSERT_EQ(resources.size(), 1);
+    EXPECT_EQ(resources[0]["uri"], "file:///workspace/MEMORY.md");
+    EXPECT_EQ(resources[0]["name"], "Agent Memory");
+    EXPECT_EQ(resources[0]["mimeType"], "text/markdown");
+}
+
+TEST_F(MCPServerTest, ReadResource) {
+    quantclaw::mcp::MCPResource res;
+    res.uri = "file:///test/data.txt";
+    res.name = "Test Data";
+    res.mime_type = "text/plain";
+    res.reader = []() { return "hello world"; };
+    server_->RegisterResource(std::move(res));
+
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 7}, {"method", "resources/read"},
+        {"params", {{"uri", "file:///test/data.txt"}}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_FALSE(response.contains("error"));
+    auto& contents = response["result"]["contents"];
+    ASSERT_EQ(contents.size(), 1);
+    EXPECT_EQ(contents[0]["text"], "hello world");
+    EXPECT_EQ(contents[0]["uri"], "file:///test/data.txt");
+}
+
+TEST_F(MCPServerTest, ReadResourceNotFound) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 8}, {"method", "resources/read"},
+        {"params", {{"uri", "file:///nonexistent"}}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_TRUE(response.contains("error"));
+    EXPECT_EQ(response["error"]["code"], -32602);
+}
+
+// --- MCP Prompts ---
+
+TEST_F(MCPServerTest, ListPromptsEmpty) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 9}, {"method", "prompts/list"}, {"params", {}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_TRUE(response["result"]["prompts"].is_array());
+    EXPECT_EQ(response["result"]["prompts"].size(), 0);
+}
+
+TEST_F(MCPServerTest, RegisterAndListPrompt) {
+    quantclaw::mcp::MCPPrompt prompt;
+    prompt.name = "summarize";
+    prompt.description = "Summarize text";
+    prompt.arguments = {{"text", "Text to summarize", true}};
+    prompt.renderer = [](const nlohmann::json& args) -> nlohmann::json {
+        std::string text = args.value("text", "");
+        return {{{"role", "user"}, {"content", "Please summarize: " + text}}};
+    };
+    server_->RegisterPrompt(std::move(prompt));
+
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 11}, {"method", "prompts/list"}, {"params", {}}
+    };
+    auto response = server_->HandleRequest(request);
+    auto& prompts = response["result"]["prompts"];
+    ASSERT_EQ(prompts.size(), 1);
+    EXPECT_EQ(prompts[0]["name"], "summarize");
+    EXPECT_EQ(prompts[0]["description"], "Summarize text");
+    ASSERT_EQ(prompts[0]["arguments"].size(), 1);
+    EXPECT_EQ(prompts[0]["arguments"][0]["name"], "text");
+    EXPECT_TRUE(prompts[0]["arguments"][0]["required"]);
+}
+
+TEST_F(MCPServerTest, GetPrompt) {
+    quantclaw::mcp::MCPPrompt prompt;
+    prompt.name = "greet";
+    prompt.description = "Greeting prompt";
+    prompt.renderer = [](const nlohmann::json& args) -> nlohmann::json {
+        std::string name = args.value("name", "World");
+        return {{{"role", "user"}, {"content", "Hello, " + name + "!"}}};
+    };
+    server_->RegisterPrompt(std::move(prompt));
+
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 12}, {"method", "prompts/get"},
+        {"params", {{"name", "greet"}, {"arguments", {{"name", "Alice"}}}}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_FALSE(response.contains("error"));
+    auto& messages = response["result"]["messages"];
+    ASSERT_EQ(messages.size(), 1);
+    EXPECT_EQ(messages[0]["content"], "Hello, Alice!");
+}
+
+TEST_F(MCPServerTest, GetPromptNotFound) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"}, {"id", 13}, {"method", "prompts/get"},
+        {"params", {{"name", "nonexistent"}}}
+    };
+    auto response = server_->HandleRequest(request);
+    EXPECT_TRUE(response.contains("error"));
+    EXPECT_EQ(response["error"]["code"], -32602);
+}
