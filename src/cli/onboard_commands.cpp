@@ -314,6 +314,7 @@ int OnboardCommands::SetupSkills() {
 
     int installed = 0;
     int skipped = 0;
+    int failed = 0;
     for (const auto& skill : GetBuiltinSkills()) {
         auto skill_dir = skills_dir / skill.name;
         auto skill_file = skill_dir / "SKILL.md";
@@ -326,11 +327,23 @@ int OnboardCommands::SetupSkills() {
         try {
             std::filesystem::create_directories(skill_dir);
             std::ofstream f(skill_file);
+            if (!f.is_open()) {
+                logger_->warn("Failed to install skill '{}': cannot open file for writing",
+                              skill.name);
+                ++failed;
+                continue;
+            }
             f << skill.content;
+            if (!f) {
+                logger_->warn("Failed to install skill '{}': write error", skill.name);
+                ++failed;
+                continue;
+            }
             std::cout << "  + skill: " << skill.name << std::endl;
             ++installed;
         } catch (const std::exception& e) {
             logger_->warn("Failed to install skill '{}': {}", skill.name, e.what());
+            ++failed;
         }
     }
 
@@ -341,7 +354,7 @@ int OnboardCommands::SetupSkills() {
         std::cout << "✓ Built-in skills already present (" << skipped
                   << " skipped)" << std::endl;
     }
-    return 0;
+    return failed > 0 ? 1 : 0;
 }
 
 int OnboardCommands::VerifySetup() {

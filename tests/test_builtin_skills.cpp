@@ -11,13 +11,17 @@ namespace {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// Returns true when the SKILL.md content contains a YAML frontmatter block
-// (opening and closing "---" delimiters).
+// Returns true when the SKILL.md content starts with a YAML frontmatter block:
+// the opening "---" must be at position 0 (or after a leading newline at most),
+// and a closing "---" must follow on a later line.  Bare "---" markdown
+// horizontal rules elsewhere in the body do not trigger a false positive.
 bool HasFrontmatter(const std::string& content) {
-    auto first = content.find("---");
-    if (first == std::string::npos) return false;
-    auto second = content.find("---", first + 3);
-    return second != std::string::npos;
+    // Opening delimiter must be at the very start of the file.
+    if (content.rfind("---", 0) == std::string::npos) return false;
+    // Closing delimiter must appear after the first newline past the opener.
+    auto after_open = content.find('\n');
+    if (after_open == std::string::npos) return false;
+    return content.find("---", after_open) != std::string::npos;
 }
 
 // Returns true when the frontmatter contains "key: value" (value non-empty).
@@ -150,8 +154,10 @@ TEST_F(SearchSkillTest, HasDuckDuckGoProvider) {
 }
 
 TEST_F(SearchSkillTest, HasSearchCommand) {
-    // The commands section should register a slash command named "search".
-    EXPECT_NE(content_.find("name: search"), std::string::npos);
+    // Check the commands block by asserting on toolName, which only appears
+    // inside a command entry (not in the top-level frontmatter "name: search").
+    EXPECT_NE(content_.find("toolName: web_search"), std::string::npos)
+        << "search skill commands block must map to web_search tool";
 }
 
 TEST_F(SearchSkillTest, DocumentsQueryParameter) {
@@ -220,7 +226,14 @@ TEST_F(BuiltinSkillsTest, HealthcheckHasAlwaysTrue) {
 TEST_F(BuiltinSkillsTest, HealthcheckHasCommand) {
     const BuiltinSkill* s = find("healthcheck");
     ASSERT_NE(s, nullptr);
-    EXPECT_NE(std::string(s->content).find("name: healthcheck"), std::string::npos);
+    std::string c = s->content;
+    // "name: healthcheck" also appears in the frontmatter, so assert on
+    // argMode: none which is only present inside the commands block.
+    EXPECT_NE(c.find("argMode: none"), std::string::npos)
+        << "healthcheck commands block must declare argMode: none";
+    // Confirm the command routes to the correct tool.
+    EXPECT_NE(c.find("toolName: system.run"), std::string::npos)
+        << "healthcheck command must reference system.run tool";
 }
 
 // ── skill-creator skill ───────────────────────────────────────────────────────
