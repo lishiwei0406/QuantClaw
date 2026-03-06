@@ -108,6 +108,18 @@ public:
     // Append a full SessionMessage
     void AppendMessage(const std::string& session_key, const SessionMessage& msg);
 
+    // Append a thinking_level_change entry (OpenClaw JSONL compat)
+    void AppendThinkingLevelChange(const std::string& session_key,
+                                    const std::string& thinking_level);
+
+    // Append a custom_message entry (OpenClaw JSONL compat)
+    // custom_type: arbitrary string identifier; content/display/details are optional JSON
+    void AppendCustomMessage(const std::string& session_key,
+                              const std::string& custom_type,
+                              const nlohmann::json& content = nlohmann::json::array(),
+                              const nlohmann::json& display = nlohmann::json::object(),
+                              const nlohmann::json& details = nlohmann::json::object());
+
     // Get session history
     std::vector<SessionMessage> GetHistory(const std::string& session_key,
                                             int max_messages = -1) const;
@@ -139,6 +151,12 @@ private:
     std::string generate_session_id() const;
     std::string get_timestamp() const;
     std::filesystem::path transcript_path(const std::string& session_id) const;
+
+    // Shared boilerplate: normalize key, look up session, open transcript,
+    // write entry, update updated_at, and SaveStore. Returns true on success.
+    // Caller must NOT hold mutex_ when calling this.
+    bool AppendTranscriptEntry(const std::string& session_key,
+                               const nlohmann::json& entry);
 };
 
 } // namespace quantclaw

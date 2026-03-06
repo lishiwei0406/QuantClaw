@@ -408,3 +408,84 @@ TEST_F(SessionManagerTest, CaseInsensitiveKeys) {
     auto h2 = session_mgr_->GetOrCreate("agent:main:mychat");
     EXPECT_EQ(h1.session_id, h2.session_id);
 }
+
+// --- JSONL entry type: thinking_level_change ---
+
+TEST_F(SessionManagerTest, AppendThinkingLevelChange) {
+    auto handle = session_mgr_->GetOrCreate("agent:main:test-thinking");
+
+    session_mgr_->AppendThinkingLevelChange("agent:main:test-thinking", "extended");
+
+    // Read the JSONL file directly and verify the entry
+    std::ifstream f(handle.transcript_path);
+    std::string line;
+    bool found = false;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        auto j = nlohmann::json::parse(line);
+        if (j.value("type", "") == "thinking_level_change") {
+            EXPECT_EQ(j.value("thinkingLevel", ""), "extended");
+            EXPECT_FALSE(j.value("timestamp", "").empty());
+            found = true;
+        }
+    }
+    EXPECT_TRUE(found) << "thinking_level_change entry not found in transcript";
+}
+
+TEST_F(SessionManagerTest, AppendThinkingLevelChangeUnknownSession) {
+    // Should log error without crashing
+    EXPECT_NO_THROW(
+        session_mgr_->AppendThinkingLevelChange("agent:main:does-not-exist", "basic")
+    );
+}
+
+// --- JSONL entry type: custom_message ---
+
+TEST_F(SessionManagerTest, AppendCustomMessage) {
+    auto handle = session_mgr_->GetOrCreate("agent:main:test-custom");
+
+    nlohmann::json content = {{{"type", "text"}, {"text", "hello"}}};
+    nlohmann::json display = {{"banner", "info"}};
+    nlohmann::json details = {{"source", "system"}};
+
+    session_mgr_->AppendCustomMessage(
+        "agent:main:test-custom", "system_alert", content, display, details);
+
+    std::ifstream f(handle.transcript_path);
+    std::string line;
+    bool found = false;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        auto j = nlohmann::json::parse(line);
+        if (j.value("type", "") == "custom_message") {
+            EXPECT_EQ(j.value("customType", ""), "system_alert");
+            EXPECT_EQ(j["content"][0]["text"].get<std::string>(), "hello");
+            EXPECT_EQ(j["display"].value("banner", ""), "info");
+            EXPECT_EQ(j["details"].value("source", ""), "system");
+            EXPECT_FALSE(j.value("timestamp", "").empty());
+            found = true;
+        }
+    }
+    EXPECT_TRUE(found) << "custom_message entry not found in transcript";
+}
+
+TEST_F(SessionManagerTest, AppendCustomMessageDefaultArgs) {
+    auto handle = session_mgr_->GetOrCreate("agent:main:test-custom-default");
+    // Should not throw with default args
+    EXPECT_NO_THROW(
+        session_mgr_->AppendCustomMessage("agent:main:test-custom-default", "ping")
+    );
+    std::ifstream f(handle.transcript_path);
+    std::string line;
+    bool found = false;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        auto j = nlohmann::json::parse(line);
+        if (j.value("type", "") == "custom_message") {
+            EXPECT_EQ(j.value("customType", ""), "ping");
+            EXPECT_TRUE(j["content"].is_array());
+            found = true;
+        }
+    }
+    EXPECT_TRUE(found);
+}

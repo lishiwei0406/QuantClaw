@@ -139,7 +139,9 @@ int OnboardCommands::QuickSetupCommand(const std::vector<std::string>& /*args*/)
         std::cerr << "Failed to create config" << std::endl;
         return 1;
     }
-    if (!CreateSOULFile() || !CreateAgentsFile() || !CreateToolsFile()) {
+    if (!CreateSOULFile() || !CreateMemoryFile() || !CreateSkillFile() ||
+        !CreateIdentityFile() || !CreateHeartbeatFile() || !CreateUserFile() ||
+        !CreateAgentsFile() || !CreateToolsFile()) {
         std::cerr << "Failed to create workspace files" << std::endl;
         return 1;
     }
@@ -261,15 +263,14 @@ int OnboardCommands::SetupWorkspace() {
     if (!CreateWorkspaceDirectory()) {
         return 1;
     }
-    if (!CreateSOULFile()) {
-        return 1;
-    }
-    if (!CreateAgentsFile()) {
-        return 1;
-    }
-    if (!CreateToolsFile()) {
-        return 1;
-    }
+    if (!CreateSOULFile()) return 1;
+    if (!CreateMemoryFile()) return 1;
+    if (!CreateSkillFile()) return 1;
+    if (!CreateIdentityFile()) return 1;
+    if (!CreateHeartbeatFile()) return 1;
+    if (!CreateUserFile()) return 1;
+    if (!CreateAgentsFile()) return 1;
+    if (!CreateToolsFile()) return 1;
 
     std::cout << "✓ Workspace created successfully" << std::endl;
     return 0;
@@ -337,6 +338,26 @@ int OnboardCommands::VerifySetup() {
     // Check AGENTS.md
     bool agents_ok = std::filesystem::exists(workspace / "AGENTS.md");
     std::cout << "  [" << (agents_ok ? "✓" : "✗") << "] AGENTS.md" << std::endl;
+
+    // Check MEMORY.md
+    bool memory_ok = std::filesystem::exists(workspace / "MEMORY.md");
+    std::cout << "  [" << (memory_ok ? "✓" : "✗") << "] MEMORY.md" << std::endl;
+
+    // Check IDENTITY.md
+    bool identity_ok = std::filesystem::exists(workspace / "IDENTITY.md");
+    std::cout << "  [" << (identity_ok ? "✓" : "✗") << "] IDENTITY.md" << std::endl;
+
+    // Check SKILL.md
+    bool skill_ok = std::filesystem::exists(workspace / "SKILL.md");
+    std::cout << "  [" << (skill_ok ? "✓" : "✗") << "] SKILL.md" << std::endl;
+
+    // Check HEARTBEAT.md
+    bool heartbeat_ok = std::filesystem::exists(workspace / "HEARTBEAT.md");
+    std::cout << "  [" << (heartbeat_ok ? "✓" : "✗") << "] HEARTBEAT.md" << std::endl;
+
+    // Check USER.md
+    bool user_ok = std::filesystem::exists(workspace / "USER.md");
+    std::cout << "  [" << (user_ok ? "✓" : "✗") << "] USER.md" << std::endl;
 
     // Try gateway connection
     int port = 18800;
@@ -522,6 +543,87 @@ bool OnboardCommands::CreateSOULFile() {
         "- Respect user privacy\n"
         "- Follow ethical guidelines\n"
         "- Ask for confirmation before destructive operations\n");
+}
+
+bool OnboardCommands::CreateMemoryFile() {
+    return CreateWorkspaceFile("MEMORY.md",
+        "# Memory\n"
+        "\n"
+        "This file is used to store persistent memory across conversations.\n"
+        "The agent will read and update this file to remember important information.\n"
+        "\n"
+        "## Key Facts\n"
+        "<!-- The agent will add important facts and context here -->\n"
+        "\n"
+        "## Preferences\n"
+        "<!-- User preferences and working style -->\n");
+}
+
+bool OnboardCommands::CreateSkillFile() {
+    return CreateWorkspaceFile("SKILL.md",
+        "# Skills\n"
+        "\n"
+        "This file documents the agent's available skills and capabilities.\n"
+        "\n"
+        "## Built-in Skills\n"
+        "- **code**: Write and review code\n"
+        "- **search**: Search the web and knowledge bases\n"
+        "- **files**: Read, write, and manage files\n"
+        "- **exec**: Execute shell commands\n"
+        "\n"
+        "## Custom Skills\n"
+        "<!-- Add custom skills installed via: quantclaw skills install <name> -->\n");
+}
+
+bool OnboardCommands::CreateIdentityFile() {
+    return CreateWorkspaceFile("IDENTITY.md",
+        "# Identity\n"
+        "\n"
+        "## Agent Name\n"
+        "QuantClaw Assistant\n"
+        "\n"
+        "## Persona\n"
+        "A helpful, capable, and honest AI assistant.\n"
+        "\n"
+        "## Communication Style\n"
+        "- Clear and concise\n"
+        "- Proactive in asking clarifying questions\n"
+        "- Transparent about capabilities and limitations\n"
+        "\n"
+        "## Values\n"
+        "- Accuracy over speed\n"
+        "- User safety and privacy\n"
+        "- Helpful collaboration\n");
+}
+
+bool OnboardCommands::CreateHeartbeatFile() {
+    return CreateWorkspaceFile("HEARTBEAT.md",
+        "# Heartbeat\n"
+        "\n"
+        "This file is updated by the agent to indicate it is alive and active.\n"
+        "Monitoring systems can check this file to verify agent health.\n"
+        "\n"
+        "## Status\n"
+        "initialized\n"
+        "\n"
+        "## Last Active\n"
+        "<!-- Updated automatically by the agent -->\n");
+}
+
+bool OnboardCommands::CreateUserFile() {
+    return CreateWorkspaceFile("USER.md",
+        "# User Profile\n"
+        "\n"
+        "This file stores information about the user to personalize interactions.\n"
+        "\n"
+        "## Preferences\n"
+        "<!-- The agent will learn and record your preferences here -->\n"
+        "\n"
+        "## Context\n"
+        "<!-- Your working context, projects, and goals -->\n"
+        "\n"
+        "## Notes\n"
+        "<!-- Any additional notes about how you like to work -->\n");
 }
 
 bool OnboardCommands::CreateAgentsFile() {

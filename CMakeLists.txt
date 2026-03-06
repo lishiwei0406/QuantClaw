@@ -179,6 +179,10 @@ target_compile_definitions(quantclaw_core PUBLIC
     QUANTCLAW_GIT_COMMIT="${QC_GIT_COMMIT}"
 )
 
+target_compile_definitions(quantclaw_core PRIVATE
+    CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
 target_link_libraries(quantclaw_core
     PUBLIC
         spdlog::spdlog

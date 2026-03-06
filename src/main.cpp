@@ -555,7 +555,53 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
 
+            if (sub == "install") {
+                if (args.size() < 2) {
+                    std::cerr << "Usage: quantclaw skills install <name>" << std::endl;
+                    return 1;
+                }
+                const std::string& skill_name = args[1];
+
+                std::string home_str;
+                const char* home = std::getenv("HOME");
+                if (home) home_str = home;
+                else home_str = "/tmp";
+
+                auto workspace_path = std::filesystem::path(home_str) /
+                                      ".quantclaw/agents/main/workspace";
+
+                quantclaw::SkillsConfig skills_config;
+                try {
+                    auto config = quantclaw::QuantClawConfig::LoadFromFile(
+                        quantclaw::QuantClawConfig::DefaultConfigPath());
+                    skills_config = config.skills;
+                } catch (const std::exception&) {}
+
+                auto skill_loader = std::make_shared<quantclaw::SkillLoader>(logger);
+                auto skills = skill_loader->LoadSkills(skills_config, workspace_path);
+
+                auto it = std::find_if(skills.begin(), skills.end(),
+                    [&](const quantclaw::SkillMetadata& s) {
+                        return s.name == skill_name;
+                    });
+                if (it == skills.end()) {
+                    std::cerr << "Skill not found: " << skill_name << std::endl;
+                    return 1;
+                }
+
+                std::cout << "Installing dependencies for skill: " << skill_name << std::endl;
+                bool ok = skill_loader->InstallSkill(*it);
+                if (ok) {
+                    std::cout << "Done." << std::endl;
+                    return 0;
+                } else {
+                    std::cerr << "Some dependencies failed to install." << std::endl;
+                    return 1;
+                }
+            }
+
             std::cerr << "Unknown skills subcommand: " << sub << std::endl;
+            std::cerr << "Available: list, install <name>" << std::endl;
             return 1;
         }
     });
@@ -1194,6 +1240,315 @@ int main(int argc, char* argv[]) {
                               std::to_string(lines) + " ";
             cmd += log_file.string();
             return std::system(cmd.c_str());
+        }
+    });
+
+    // --- plugins command ---
+    cli.AddCommand({
+        "plugins",
+        "Manage plugins",
+        {"p"},
+        [logger, gateway_url, auth_token](int argc, char** argv) -> int {
+            std::vector<std::string> args;
+            for (int i = 1; i < argc; ++i) args.push_back(argv[i]);
+
+            std::string sub = args.empty() ? "list" : args[0];
+            std::vector<std::string> sub_args;
+            if (args.size() > 1)
+                sub_args.assign(args.begin() + 1, args.end());
+
+            auto make_client = [&logger, &gateway_url, &auth_token]()
+                -> std::shared_ptr<quantclaw::gateway::GatewayClient> {
+                auto c = std::make_shared<quantclaw::gateway::GatewayClient>(
+                    gateway_url, auth_token, logger);
+                if (!c->Connect(3000)) {
+                    std::cerr << "Error: Gateway not running" << std::endl;
+                    return nullptr;
+                }
+                return c;
+            };
+
+            // Validate plugin id: only alphanumeric, hyphens, underscores, dots
+            auto validate_plugin_id = [](const std::string& id) -> bool {
+                if (id.empty()) return false;
+                for (char c : id) {
+                    if (!std::isalnum(static_cast<unsigned char>(c)) &&
+                        c != '-' && c != '_' && c != '.') {
+                        return false;
+                    }
+                }
+                return true;
+            };
+
+            if (sub == "list") {
+                bool json_output = false;
+                for (const auto& a : sub_args) {
+                    if (a == "--json") json_output = true;
+                }
+                try {
+                    auto client = make_client();
+                    if (!client) return 1;
+                    auto result = client->Call("plugins.list", {});
+                    client->Disconnect();
+                    if (json_output) {
+                        std::cout << result.dump(2) << std::endl;
+                        return 0;
+                    }
+                    // result is a JSON array of plugin records
+                    auto arr = result.is_array() ? result
+                               : (result.contains("plugins") ? result["plugins"]
+                                                             : nlohmann::json::array());
+                    if (arr.empty()) {
+                        std::cout << "No plugins loaded" << std::endl;
+                    } else {
+                        std::cout << "Plugins (" << arr.size() << "):" << std::endl;
+                        for (const auto& p : arr) {
+                            std::string id      = p.value("id", "");
+                            std::string status  = p.value("status", "unknown");
+                            bool enabled        = p.value("enabled", true);
+                            std::string version = p.value("version", "");
+                            std::string desc    = p.value("description", "");
+
+                            std::cout << "  " << (enabled ? "+" : "-") << " " << id;
+                            if (!version.empty()) std::cout << " @" << version;
+                            std::cout << "  [" << status << "]";
+                            if (!desc.empty()) std::cout << "  " << desc;
+                            std::cout << std::endl;
+                        }
+                    }
+                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
+            if (sub == "status") {
+                std::string plugin_id = sub_args.empty() ? "" : sub_args[0];
+                try {
+                    auto client = make_client();
+                    if (!client) return 1;
+                    auto result = client->Call("plugins.list", {});
+                    client->Disconnect();
+                    auto arr = result.is_array() ? result
+                               : (result.contains("plugins") ? result["plugins"]
+                                                             : nlohmann::json::array());
+                    for (const auto& p : arr) {
+                        if (!plugin_id.empty() && p.value("id", "") != plugin_id)
+                            continue;
+                        std::cout << "Plugin: " << p.value("id", "") << std::endl;
+                        if (p.contains("version"))
+                            std::cout << "  version:  " << p["version"] << std::endl;
+                        std::cout << "  enabled:  " << (p.value("enabled", true) ? "yes" : "no") << std::endl;
+                        std::cout << "  status:   " << p.value("status", "unknown") << std::endl;
+                        std::cout << "  origin:   " << p.value("origin", "") << std::endl;
+                        if (p.contains("description"))
+                            std::cout << "  desc:     " << p["description"] << std::endl;
+                        if (p.contains("tools") && !p["tools"].empty())
+                            std::cout << "  tools:    " << p["tools"].dump() << std::endl;
+                        if (p.contains("channels") && !p["channels"].empty())
+                            std::cout << "  channels: " << p["channels"].dump() << std::endl;
+                        if (p.contains("hooks") && !p["hooks"].empty())
+                            std::cout << "  hooks:    " << p["hooks"].dump() << std::endl;
+                        if (p.contains("error"))
+                            std::cout << "  error:    " << p["error"] << std::endl;
+                        std::cout << std::endl;
+                    }
+                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
+            if (sub == "enable" || sub == "disable") {
+                if (sub_args.empty()) {
+                    std::cerr << "Usage: quantclaw plugins " << sub << " <id>" << std::endl;
+                    return 1;
+                }
+                std::string plugin_id = sub_args[0];
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
+                bool enable = (sub == "enable");
+                try {
+                    auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
+                    quantclaw::QuantClawConfig::SetValue(
+                        config_file,
+                        "plugins.entries." + plugin_id + ".enabled",
+                        enable);
+                    std::cout << (enable ? "Enabled" : "Disabled") << " plugin: "
+                              << plugin_id << std::endl;
+                    auto client = make_client();
+                    if (client) {
+                        client->Call("config.reload", {});
+                        client->Disconnect();
+                    }
+                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
+            if (sub == "install") {
+                if (sub_args.empty()) {
+                    std::cerr << "Usage: quantclaw plugins install <path> [--id <name>]"
+                              << std::endl;
+                    return 1;
+                }
+                std::string plugin_path = sub_args[0];
+                std::string plugin_id;
+                for (size_t i = 1; i < sub_args.size(); ++i) {
+                    if (sub_args[i] == "--id" && i + 1 < sub_args.size())
+                        plugin_id = sub_args[++i];
+                }
+                // Derive ID from directory name if not provided
+                if (plugin_id.empty())
+                    plugin_id = std::filesystem::path(plugin_path).filename().string();
+
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
+                if (!std::filesystem::exists(plugin_path) ||
+                    !std::filesystem::is_directory(plugin_path)) {
+                    std::cerr << "Plugin path not found or not a directory: "
+                              << plugin_path << std::endl;
+                    return 1;
+                }
+
+                try {
+                    auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
+                    nlohmann::json install_entry;
+                    install_entry["installPath"] =
+                        std::filesystem::canonical(plugin_path).string();
+                    quantclaw::QuantClawConfig::SetValue(
+                        config_file,
+                        "plugins.installs." + plugin_id,
+                        install_entry);
+                    std::cout << "Installed plugin: " << plugin_id
+                              << " from " << plugin_path << std::endl;
+                    auto client = make_client();
+                    if (client) {
+                        client->Call("config.reload", {});
+                        client->Disconnect();
+                    }
+                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
+            if (sub == "remove") {
+                if (sub_args.empty()) {
+                    std::cerr << "Usage: quantclaw plugins remove <id>" << std::endl;
+                    return 1;
+                }
+                std::string plugin_id = sub_args[0];
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
+                try {
+                    auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
+                    // Remove from installs and entries (ignore if key absent)
+                    try {
+                        quantclaw::QuantClawConfig::UnsetValue(
+                            config_file, "plugins.installs." + plugin_id);
+                    } catch (const std::exception& ue) {
+                        logger->debug("plugins.installs.{} not found: {}", plugin_id, ue.what());
+                    }
+                    try {
+                        quantclaw::QuantClawConfig::UnsetValue(
+                            config_file, "plugins.entries." + plugin_id);
+                    } catch (const std::exception& ue) {
+                        logger->debug("plugins.entries.{} not found: {}", plugin_id, ue.what());
+                    }
+                    std::cout << "Removed plugin: " << plugin_id << std::endl;
+                    auto client = make_client();
+                    if (client) {
+                        client->Call("config.reload", {});
+                        client->Disconnect();
+                    }
+                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
+            std::cerr << "Unknown plugins subcommand: " << sub << std::endl;
+            std::cerr << "Available: list, status, enable, disable, install, remove"
+                      << std::endl;
+            return 1;
+        }
+    });
+
+    // --- run command ---
+    // One-shot: send a message to the agent and print the response.
+    // Equivalent to `quantclaw agent -m "<message>"` but with a simpler interface.
+    cli.AddCommand({
+        "run",
+        "Send a one-shot message to the agent and print the response",
+        {},
+        [agent_cmds](int argc, char** argv) -> int {
+            // Collect args; reconstruct as: agent -m "<message>"
+            std::vector<std::string> args;
+            std::string message;
+            bool next_is_session = false;
+            std::string session_key;
+
+            for (int i = 1; i < argc; ++i) {
+                std::string arg = argv[i];
+                if (next_is_session) {
+                    session_key = arg;
+                    next_is_session = false;
+                } else if (arg == "-s" || arg == "--session") {
+                    next_is_session = true;
+                } else {
+                    if (!message.empty()) message += " ";
+                    message += arg;
+                }
+            }
+
+            if (message.empty()) {
+                std::cerr << "Usage: quantclaw run <message> [-s <session>]" << std::endl;
+                return 1;
+            }
+
+            args.push_back("-m");
+            args.push_back(message);
+            if (!session_key.empty()) {
+                args.push_back("--session");
+                args.push_back(session_key);
+            }
+            return agent_cmds->RequestCommand(args);
+        }
+    });
+
+    // --- eval command ---
+    // Evaluate a prompt directly against the configured model and print result.
+    // Useful for quick one-off queries without persistent sessions.
+    cli.AddCommand({
+        "eval",
+        "Evaluate a prompt against the agent (no session persistence)",
+        {},
+        [agent_cmds](int argc, char** argv) -> int {
+            std::string prompt;
+            for (int i = 1; i < argc; ++i) {
+                if (!prompt.empty()) prompt += " ";
+                prompt += argv[i];
+            }
+            if (prompt.empty()) {
+                std::cerr << "Usage: quantclaw eval <prompt>" << std::endl;
+                return 1;
+            }
+            // Use --no-session flag so no history is persisted
+            std::vector<std::string> args = {"-m", prompt, "--no-session"};
+            return agent_cmds->RequestCommand(args);
         }
     });
 

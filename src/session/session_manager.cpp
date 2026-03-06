@@ -274,6 +274,54 @@ void SessionManager::AppendMessage(const std::string& session_key, const Session
     SaveStore();
 }
 
+bool SessionManager::AppendTranscriptEntry(const std::string& session_key,
+                                              const nlohmann::json& entry) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    std::string normalized = NormalizeSessionKey(session_key);
+    auto it = store_.find(normalized);
+    if (it == store_.end()) {
+        logger_->error("Session not found: {}", session_key);
+        return false;
+    }
+    auto path = transcript_path(it->second.session_id);
+    std::ofstream file(path, std::ios::app);
+    if (!file.is_open()) {
+        logger_->error("Failed to open transcript: {}", path.string());
+        return false;
+    }
+    file << entry.dump() << "\n";
+    file.close();
+    it->second.updated_at = get_timestamp();
+    SaveStore();
+    return true;
+}
+
+void SessionManager::AppendThinkingLevelChange(const std::string& session_key,
+                                                  const std::string& thinking_level) {
+    nlohmann::json entry = {
+        {"type", "thinking_level_change"},
+        {"timestamp", get_timestamp()},
+        {"thinkingLevel", thinking_level}
+    };
+    AppendTranscriptEntry(session_key, entry);
+}
+
+void SessionManager::AppendCustomMessage(const std::string& session_key,
+                                           const std::string& custom_type,
+                                           const nlohmann::json& content,
+                                           const nlohmann::json& display,
+                                           const nlohmann::json& details) {
+    nlohmann::json entry = {
+        {"type", "custom_message"},
+        {"timestamp", get_timestamp()},
+        {"customType", custom_type},
+        {"content", content},
+        {"display", display},
+        {"details", details}
+    };
+    AppendTranscriptEntry(session_key, entry);
+}
+
 std::vector<SessionMessage> SessionManager::GetHistory(const std::string& session_key,
                                                          int max_messages) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);

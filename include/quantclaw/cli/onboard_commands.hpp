@@ -41,6 +41,11 @@ private:
                          const std::string& bind, const std::string& token);
     bool CreateWorkspaceFile(const std::string& filename, const std::string& content);
     bool CreateSOULFile();
+    bool CreateMemoryFile();
+    bool CreateSkillFile();
+    bool CreateIdentityFile();
+    bool CreateHeartbeatFile();
+    bool CreateUserFile();
     bool CreateAgentsFile();
     bool CreateToolsFile();
     bool InstallDaemon(int port);

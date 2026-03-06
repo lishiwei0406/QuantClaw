@@ -4,11 +4,14 @@
 #include "quantclaw/tools/browser_tool.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <thread>
+#include <httplib.h>
 
 namespace quantclaw {
 
@@ -63,6 +66,7 @@ BrowserToolConfig BrowserToolConfig::FromJson(const nlohmann::json& j) {
   c.viewport_width = j.value("viewportWidth", 1280);
   c.viewport_height = j.value("viewportHeight", 720);
   c.navigation_timeout_ms = j.value("navigationTimeoutMs", 30000);
+  c.cdp_debug_port = j.value("cdpDebugPort", 9222);
 
   if (j.contains("ssrf") && j["ssrf"].is_object()) {
     auto& ssrf = j["ssrf"];
@@ -99,6 +103,7 @@ bool BrowserSession::initialize(const BrowserToolConfig& config) {
 }
 
 void BrowserSession::close() {
+  cdp_ws_.stop();
   if (browser_pid_ != platform::kInvalidPid) {
     platform::terminate_process(browser_pid_);
     platform::wait_process(browser_pid_, 0);  // non-blocking reap
@@ -181,9 +186,10 @@ bool BrowserSession::launch_local() {
     return false;
   }
 
+  int port = config_.cdp_debug_port;
   std::vector<std::string> args = {
       chromium,
-      "--remote-debugging-port=0",
+      "--remote-debugging-port=" + std::to_string(port),
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
@@ -204,9 +210,35 @@ bool BrowserSession::launch_local() {
   browser_pid_ = pid;
   connection_.pid_or_id = std::to_string(pid);
   connection_.is_remote = false;
-  connection_.is_running = true;
-  logger_->info("Launched browser: PID={}, binary={}", pid, chromium);
-  return true;
+  logger_->info("Launched browser: PID={}, binary={}, port={}", pid, chromium, port);
+
+  // Wait for DevTools HTTP endpoint to become ready (up to 5 seconds)
+  std::string ws_url;
+  for (int attempt = 0; attempt < 25; ++attempt) {
+    try {
+      httplib::Client http("127.0.0.1", port);
+      http.set_connection_timeout(1, 0);
+      auto res = http.Get("/json/version");
+      if (res && res->status == 200) {
+        auto j = nlohmann::json::parse(res->body);
+        ws_url = j.value("webSocketDebuggerUrl", "");
+        if (!ws_url.empty()) break;
+      }
+    } catch (...) {}
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+
+  if (ws_url.empty()) {
+    logger_->error("Browser DevTools endpoint not ready on port {}", port);
+    return false;
+  }
+
+  logger_->info("Browser DevTools ready: {}", ws_url);
+  bool connected = connect_cdp_websocket(ws_url);
+  if (!connected) {
+    logger_->warn("Port {} may already be in use. Consider setting a unique cdp_debug_port.", port);
+  }
+  return connected;
 }
 
 bool BrowserSession::connect_remote() {
@@ -215,17 +247,114 @@ bool BrowserSession::connect_remote() {
     return false;
   }
 
-  connection_.cdp_url = config_.remote_cdp_url;
+  // If given an HTTP URL, fetch /json/version to get the WS URL
+  std::string ws_url = config_.remote_cdp_url;
+  if (ws_url.rfind("http", 0) == 0) {
+    try {
+      // Parse host/port from HTTP URL
+      std::regex http_re(R"(https?://([^:/]+):?(\d*))");
+      std::smatch m;
+      if (std::regex_search(ws_url, m, http_re)) {
+        std::string host = m[1].str();
+        int port = m[2].str().empty() ? 80 : std::stoi(m[2].str());
+        httplib::Client http(host, port);
+        http.set_connection_timeout(3, 0);
+        auto res = http.Get("/json/version");
+        if (res && res->status == 200) {
+          auto j = nlohmann::json::parse(res->body);
+          ws_url = j.value("webSocketDebuggerUrl", ws_url);
+        }
+      }
+    } catch (...) {}
+    // If the URL still starts with "http", we failed to resolve a WS URL
+    if (ws_url.rfind("http", 0) == 0) {
+      logger_->error("Failed to resolve WebSocket URL from HTTP endpoint: {}", ws_url);
+      return false;
+    }
+  }
+
   connection_.is_remote = true;
-  connection_.is_running = true;
-  logger_->info("Connected to remote browser: {}", config_.remote_cdp_url);
-  return true;
+  logger_->info("Connecting to remote browser: {}", ws_url);
+  return connect_cdp_websocket(ws_url);
+}
+
+bool BrowserSession::connect_cdp_websocket(const std::string& ws_url) {
+  cdp_ws_.setUrl(ws_url);
+  cdp_ws_.setOnMessageCallback([this](const ix::WebSocketMessagePtr& msg) {
+    if (msg->type == ix::WebSocketMessageType::Open) {
+      cdp_cv_.notify_all();
+    } else if (msg->type == ix::WebSocketMessageType::Message) {
+      try {
+        auto j = nlohmann::json::parse(msg->str);
+        int msg_id = j.value("id", -1);
+        if (msg_id >= 0) {
+          {
+            std::lock_guard<std::mutex> lock(cdp_mu_);
+            cdp_responses_[msg_id] = j;
+          }
+          cdp_cv_.notify_all();
+        }
+      } catch (...) {}
+    } else if (msg->type == ix::WebSocketMessageType::Error) {
+      logger_->warn("CDP WebSocket error: {}", msg->errorInfo.reason);
+    }
+  });
+
+  cdp_ws_.start();
+
+  // Wait up to 3 seconds for the WebSocket to open
+  {
+    std::unique_lock<std::mutex> lock(cdp_mu_);
+    bool opened = cdp_cv_.wait_for(lock, std::chrono::seconds(3), [this] {
+      return cdp_ws_.getReadyState() == ix::ReadyState::Open;
+    });
+    if (opened) {
+      connection_.cdp_url = ws_url;
+      connection_.is_running = true;
+      logger_->info("CDP WebSocket connected: {}", ws_url);
+      return true;
+    }
+  }
+
+  logger_->error("Failed to connect CDP WebSocket to: {}", ws_url);
+  cdp_ws_.stop();
+  return false;
 }
 
 std::string BrowserSession::cdp_send(const std::string& method,
                                       const nlohmann::json& params) {
-  logger_->debug("CDP: {} params={}", method, params.dump());
-  return "{}";
+  if (!connection_.is_running || cdp_ws_.getReadyState() != ix::ReadyState::Open) {
+    logger_->warn("CDP not connected, skipping: {}", method);
+    return "{}";
+  }
+
+  int id = ++cdp_id_;
+  nlohmann::json msg = {{"id", id}, {"method", method}, {"params", params}};
+  cdp_ws_.send(msg.dump());
+  logger_->debug("CDP send id={} method={}", id, method);
+
+  // Wait for response
+  std::unique_lock<std::mutex> lock(cdp_mu_);
+  bool ok = cdp_cv_.wait_for(
+      lock,
+      std::chrono::milliseconds(config_.navigation_timeout_ms),
+      [this, id] { return cdp_responses_.count(id) > 0; });
+
+  if (!ok) {
+    logger_->warn("CDP timeout for method: {}", method);
+    cdp_responses_.erase(id);  // clean up any late-arriving response
+    return "{}";
+  }
+
+  auto resp = cdp_responses_[id];
+  cdp_responses_.erase(id);
+
+  if (resp.contains("error")) {
+    logger_->warn("CDP error for {}: {}", method, resp["error"].dump());
+    return "{}";
+  }
+
+  return resp.value("result", nlohmann::json::object()).dump();
 }
 
 std::string BrowserSession::find_chromium() {
