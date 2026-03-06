@@ -555,7 +555,53 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
 
+            if (sub == "install") {
+                if (args.size() < 2) {
+                    std::cerr << "Usage: quantclaw skills install <name>" << std::endl;
+                    return 1;
+                }
+                const std::string& skill_name = args[1];
+
+                std::string home_str;
+                const char* home = std::getenv("HOME");
+                if (home) home_str = home;
+                else home_str = "/tmp";
+
+                auto workspace_path = std::filesystem::path(home_str) /
+                                      ".quantclaw/agents/main/workspace";
+
+                quantclaw::SkillsConfig skills_config;
+                try {
+                    auto config = quantclaw::QuantClawConfig::LoadFromFile(
+                        quantclaw::QuantClawConfig::DefaultConfigPath());
+                    skills_config = config.skills;
+                } catch (const std::exception&) {}
+
+                auto skill_loader = std::make_shared<quantclaw::SkillLoader>(logger);
+                auto skills = skill_loader->LoadSkills(skills_config, workspace_path);
+
+                auto it = std::find_if(skills.begin(), skills.end(),
+                    [&](const quantclaw::SkillMetadata& s) {
+                        return s.name == skill_name;
+                    });
+                if (it == skills.end()) {
+                    std::cerr << "Skill not found: " << skill_name << std::endl;
+                    return 1;
+                }
+
+                std::cout << "Installing dependencies for skill: " << skill_name << std::endl;
+                bool ok = skill_loader->InstallSkill(*it);
+                if (ok) {
+                    std::cout << "Done." << std::endl;
+                    return 0;
+                } else {
+                    std::cerr << "Some dependencies failed to install." << std::endl;
+                    return 1;
+                }
+            }
+
             std::cerr << "Unknown skills subcommand: " << sub << std::endl;
+            std::cerr << "Available: list, install <name>" << std::endl;
             return 1;
         }
     });
@@ -1222,6 +1268,18 @@ int main(int argc, char* argv[]) {
                 return c;
             };
 
+            // Validate plugin id: only alphanumeric, hyphens, underscores, dots
+            auto validate_plugin_id = [](const std::string& id) -> bool {
+                if (id.empty()) return false;
+                for (char c : id) {
+                    if (!std::isalnum(static_cast<unsigned char>(c)) &&
+                        c != '-' && c != '_' && c != '.') {
+                        return false;
+                    }
+                }
+                return true;
+            };
+
             if (sub == "list") {
                 bool json_output = false;
                 for (const auto& a : sub_args) {
@@ -1309,6 +1367,10 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 std::string plugin_id = sub_args[0];
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
                 bool enable = (sub == "enable");
                 try {
                     auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
@@ -1346,11 +1408,22 @@ int main(int argc, char* argv[]) {
                 if (plugin_id.empty())
                     plugin_id = std::filesystem::path(plugin_path).filename().string();
 
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
+                if (!std::filesystem::exists(plugin_path) ||
+                    !std::filesystem::is_directory(plugin_path)) {
+                    std::cerr << "Plugin path not found or not a directory: "
+                              << plugin_path << std::endl;
+                    return 1;
+                }
+
                 try {
                     auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
                     nlohmann::json install_entry;
                     install_entry["installPath"] =
-                        std::filesystem::absolute(plugin_path).string();
+                        std::filesystem::canonical(plugin_path).string();
                     quantclaw::QuantClawConfig::SetValue(
                         config_file,
                         "plugins.installs." + plugin_id,
@@ -1375,17 +1448,25 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 std::string plugin_id = sub_args[0];
+                if (!validate_plugin_id(plugin_id)) {
+                    std::cerr << "Invalid plugin id: " << plugin_id << std::endl;
+                    return 1;
+                }
                 try {
                     auto config_file = quantclaw::QuantClawConfig::DefaultConfigPath();
-                    // Remove from installs and entries
+                    // Remove from installs and entries (ignore if key absent)
                     try {
                         quantclaw::QuantClawConfig::UnsetValue(
                             config_file, "plugins.installs." + plugin_id);
-                    } catch (...) {}
+                    } catch (const std::exception& ue) {
+                        logger->debug("plugins.installs.{} not found: {}", plugin_id, ue.what());
+                    }
                     try {
                         quantclaw::QuantClawConfig::UnsetValue(
                             config_file, "plugins.entries." + plugin_id);
-                    } catch (...) {}
+                    } catch (const std::exception& ue) {
+                        logger->debug("plugins.entries.{} not found: {}", plugin_id, ue.what());
+                    }
                     std::cout << "Removed plugin: " << plugin_id << std::endl;
                     auto client = make_client();
                     if (client) {

@@ -342,6 +342,7 @@ std::string BrowserSession::cdp_send(const std::string& method,
 
   if (!ok) {
     logger_->warn("CDP timeout for method: {}", method);
+    cdp_responses_.erase(id);  // clean up any late-arriving response
     return "{}";
   }
 
