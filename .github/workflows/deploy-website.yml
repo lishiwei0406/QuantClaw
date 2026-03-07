@@ -4,36 +4,21 @@ on:
   push:
     branches:
       - main
-      - develop
     paths:
       - 'website/**'
       - '.github/workflows/deploy-website.yml'
-  pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'website/**'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-trigger:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,24 +31,13 @@ jobs:
         working-directory: website
         run: npm ci
 
-      - name: Build website
+      - name: Build website (smoke check)
         working-directory: website
         run: npm run docs:build
 
-      - name: Upload build artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Trigger quantclaw.github.io deployment
+        uses: peter-evans/repository-dispatch@v3
         with:
-          path: website/.vitepress/dist
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+          repository: QuantClaw/quantclaw.github.io
+          event-type: website-updated

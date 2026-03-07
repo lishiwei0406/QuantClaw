@@ -82,15 +82,14 @@ export default defineConfig({
   title: 'QuantClaw',
   description: 'High-performance C++17 implementation of OpenClaw - AI agent framework with persistent memory, browser control, and plugin ecosystem',
 
-  // GitHub Pages: deployed at quantclaw.github.io/QuantClaw/
-  base: '/QuantClaw/',
+  // Deployed to quantclaw.github.io (root domain)
   cleanUrls: true,
 
   head: [
     ['meta', { name: 'theme-color', content: '#2d3748' }],
     ['meta', { name: 'og:type', content: 'website' }],
-    ['meta', { name: 'og:image', content: '/QuantClaw/logo.png' }],
-    ['link', { rel: 'icon', href: '/QuantClaw/favicon.ico' }],
+    ['meta', { name: 'og:image', content: '/logo.png' }],
+    ['link', { rel: 'icon', href: '/favicon.ico' }],
   ],
 
   locales: {
