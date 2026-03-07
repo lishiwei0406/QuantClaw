@@ -88,7 +88,7 @@ export default defineConfig({
   head: [
     ['meta', { name: 'theme-color', content: '#2d3748' }],
     ['meta', { name: 'og:type', content: 'website' }],
-    ['meta', { name: 'og:image', content: '/logo.png' }],
+    ['meta', { name: 'og:image', content: '/logo-light.png' }],
     ['link', { rel: 'icon', href: '/favicon.ico' }],
   ],
 
@@ -142,7 +142,10 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: '/logo.png',
+    logo: {
+      light: '/logo-light.png',
+      dark: '/logo-dark.png',
+    },
     search: {
       provider: 'local',
     },

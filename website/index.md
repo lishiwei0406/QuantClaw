@@ -6,7 +6,7 @@ hero:
   text: "High-Performance AI Agent Framework"
   tagline: "C++17 native implementation of OpenClaw with persistent memory, browser control, and plugin ecosystem"
   image:
-    src: /logo.png
+    src: /logo-light.png
     alt: QuantClaw
   actions:
     - theme: brand

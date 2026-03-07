@@ -61,6 +61,11 @@
   color: var(--vp-c-accent);
 }
 
+/* Hero image: swap to dark logo when in dark mode */
+.dark .VPHero .image-src {
+  content: url('/logo-dark.png');
+}
+
 /* Feature cards */
 .VPFeature {
   transition: all 0.3s ease;
