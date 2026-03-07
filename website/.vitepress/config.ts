@@ -5,7 +5,8 @@ export default defineConfig({
   description: 'High-performance C++17 implementation of OpenClaw - AI agent framework with persistent memory, browser control, and plugin ecosystem',
 
   // GitHub Pages configuration
-  base: '/',
+  // Deployed under quantclaw.github.io/QuantClaw/ (main repo Pages)
+  base: '/QuantClaw/',
   lang: 'en-US',
   cleanUrls: true,
 
