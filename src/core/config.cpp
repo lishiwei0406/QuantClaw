@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <set>
 #include <stdexcept>
 
 namespace quantclaw {
@@ -223,8 +224,21 @@ ProviderConfig ProviderConfig::FromJson(const nlohmann::json& json) {
   }
   // Parse profiles array for multi-key rotation
   if (json.contains("profiles") && json["profiles"].is_array()) {
+    std::set<std::string> seen_ids;
+    int auto_idx = 0;
     for (const auto& p : json["profiles"]) {
-      config.profiles.push_back(AuthProfileConfig::FromJson(p));
+      auto profile = AuthProfileConfig::FromJson(p);
+      // Assign auto-generated id if empty
+      if (profile.id.empty()) {
+        profile.id = "profile_" + std::to_string(auto_idx);
+      }
+      // Skip duplicate ids
+      if (seen_ids.count(profile.id)) {
+        continue;
+      }
+      seen_ids.insert(profile.id);
+      config.profiles.push_back(std::move(profile));
+      ++auto_idx;
     }
   }
   return config;

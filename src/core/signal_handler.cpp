@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <thread>
 
 namespace quantclaw {
@@ -40,9 +41,9 @@ bool SignalHandler::ShouldShutdown() {
 void SignalHandler::signal_handler(int signum) {
   if (signum == SIGINT || signum == SIGTERM) {
     // Prevent re-entrant shutdown: if already requested, force-exit.
+    // Use _exit() which is async-signal-safe, unlike std::signal/std::raise.
     if (shutdown_requested_.exchange(true)) {
-      std::signal(signum, SIG_DFL);
-      std::raise(signum);
+      _exit(128 + signum);
       return;
     }
     if (shutdown_callback_) {

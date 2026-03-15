@@ -39,6 +39,9 @@ VectorIndex::Search(const std::vector<float>& query, int top_k) const {
   results.reserve(entries_.size());
 
   for (const auto& entry : entries_) {
+    // Skip entries with mismatched dimensions to avoid false 0.0 scores
+    if (entry.embedding.size() != query.size())
+      continue;
     float sim = CosineSimilarity(query, entry.embedding);
     results.push_back(
         {entry.id, entry.content, entry.source, entry.line_number, sim});
