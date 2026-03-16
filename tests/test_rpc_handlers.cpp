@@ -575,6 +575,92 @@ TEST_F(RpcHandlersTest, ModelsListStub) {
   client->Disconnect();
 }
 
+// --- sessions.history returns ContentBlock arrays ---
+TEST_F(RpcHandlersTest, SessionsHistoryReturnsContentBlockArray) {
+  auto client = make_client();
+  ASSERT_TRUE(client->Connect(5000));
+
+  // Create a session with a message
+  client->Call("agent.request",
+               {{"message", "Hi"}, {"sessionKey", "hist:test:main"}}, 10000);
+
+  auto result =
+      client->Call("sessions.history", {{"sessionKey", "hist:test:main"}});
+  ASSERT_TRUE(result.is_array());
+  ASSERT_GE(result.size(), 1u);
+
+  // Each message should have role, timestamp, and content as an array
+  for (const auto& msg : result) {
+    EXPECT_TRUE(msg.contains("role"));
+    EXPECT_TRUE(msg.contains("timestamp"));
+    ASSERT_TRUE(msg.contains("content"));
+    ASSERT_TRUE(msg["content"].is_array());
+
+    // Each content block should have a "type" field
+    for (const auto& block : msg["content"]) {
+      EXPECT_TRUE(block.contains("type"));
+      std::string type = block.value("type", "");
+      if (type == "text") {
+        EXPECT_TRUE(block.contains("text"));
+      }
+    }
+  }
+
+  client->Disconnect();
+}
+
+// sessions.history with non-existent session returns empty array
+TEST_F(RpcHandlersTest, SessionsHistoryNonexistentReturnsEmpty) {
+  auto client = make_client();
+  ASSERT_TRUE(client->Connect(5000));
+
+  auto result =
+      client->Call("sessions.history", {{"sessionKey", "no:such:key"}});
+  ASSERT_TRUE(result.is_array());
+  EXPECT_EQ(result.size(), 0u);
+
+  client->Disconnect();
+}
+
+// --- sessions.delete edge cases ---
+
+TEST_F(RpcHandlersTest, SessionsDeleteNonexistentReturnsError) {
+  auto client = make_client();
+  ASSERT_TRUE(client->Connect(5000));
+
+  EXPECT_THROW(
+      client->Call("sessions.delete", {{"sessionKey", "no:such:key"}}, 5000),
+      std::runtime_error);
+
+  client->Disconnect();
+}
+
+TEST_F(RpcHandlersTest, SessionsDeleteExistingReturnsOk) {
+  auto client = make_client();
+  ASSERT_TRUE(client->Connect(5000));
+
+  // Create a session first
+  client->Call("agent.request",
+               {{"message", "Hello"}, {"sessionKey", "del:test:main"}}, 10000);
+
+  // Delete it
+  auto result =
+      client->Call("sessions.delete", {{"sessionKey", "del:test:main"}});
+  EXPECT_TRUE(result.value("ok", false));
+
+  // Verify it's gone
+  auto list_result = client->Call("sessions.list", nlohmann::json::object());
+  bool found = false;
+  for (const auto& s : list_result["sessions"]) {
+    if (s.value("key", "") == "agent:del:test:main") {
+      found = true;
+    }
+  }
+  EXPECT_FALSE(found);
+
+  client->Disconnect();
+}
+
 // Test tools.catalog — new shape: {agentId, profiles:[], groups:[{tools:[]}]}
 TEST_F(RpcHandlersTest, ToolsCatalogStub) {
   auto client = make_client();

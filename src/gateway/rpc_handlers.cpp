@@ -406,7 +406,12 @@ void register_rpc_handlers(
                            if (session_key.empty()) {
                              throw std::runtime_error("key is required");
                            }
-                           session_manager->DeleteSession(session_key);
+                           bool deleted =
+                               session_manager->DeleteSession(session_key);
+                           if (!deleted) {
+                             throw std::runtime_error(
+                                 "session not found: " + session_key);
+                           }
                            return {{"ok", true}};
                          });
 
