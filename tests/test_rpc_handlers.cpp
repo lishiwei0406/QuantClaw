@@ -624,13 +624,15 @@ TEST_F(RpcHandlersTest, SessionsHistoryNonexistentReturnsEmpty) {
 
 // --- sessions.delete edge cases ---
 
-TEST_F(RpcHandlersTest, SessionsDeleteNonexistentReturnsError) {
+TEST_F(RpcHandlersTest, SessionsDeleteNonexistentReturnsOkNotDeleted) {
   auto client = make_client();
   ASSERT_TRUE(client->Connect(5000));
 
-  EXPECT_THROW(
-      client->Call("sessions.delete", {{"sessionKey", "no:such:key"}}, 5000),
-      std::runtime_error);
+  // Idempotent delete: non-existent key returns ok but deleted=false
+  auto result =
+      client->Call("sessions.delete", {{"sessionKey", "no:such:key"}}, 5000);
+  EXPECT_TRUE(result.value("ok", false));
+  EXPECT_FALSE(result.value("deleted", true));
 
   client->Disconnect();
 }
@@ -647,6 +649,7 @@ TEST_F(RpcHandlersTest, SessionsDeleteExistingReturnsOk) {
   auto result =
       client->Call("sessions.delete", {{"sessionKey", "del:test:main"}});
   EXPECT_TRUE(result.value("ok", false));
+  EXPECT_TRUE(result.value("deleted", false));
 
   // Verify it's gone
   auto list_result = client->Call("sessions.list", nlohmann::json::object());

@@ -22,9 +22,9 @@
 #include "quantclaw/cli/session_commands.hpp"
 #include "quantclaw/config.hpp"
 #include "quantclaw/core/memory_search.hpp"
-#include "quantclaw/platform/process.hpp"
 #include "quantclaw/core/skill_loader.hpp"
 #include "quantclaw/gateway/gateway_client.hpp"
+#include "quantclaw/platform/process.hpp"
 
 // Bring port/URL constants into scope (avoids quantclaw:: prefix for literals)
 using quantclaw::kDefaultGatewayPort;
@@ -1293,8 +1293,7 @@ int main(int argc, char* argv[]) {
   cli.AddCommand(
       {"logs", "View gateway logs", {}, [](int argc, char** argv) -> int {
          auto home_dir = quantclaw::platform::home_directory();
-         auto log_dir =
-             std::filesystem::path(home_dir) / ".quantclaw" / "logs";
+         auto log_dir = std::filesystem::path(home_dir) / ".quantclaw" / "logs";
 
          int lines = 50;
          bool follow = false;
@@ -1311,11 +1310,10 @@ int main(int argc, char* argv[]) {
          auto log_file = log_dir / "gateway.log";
          if (!std::filesystem::exists(log_file)) {
 #ifdef _WIN32
-           std::cerr << "No log file found at: "
-                     << log_file.string() << std::endl;
-           std::cerr
-               << "Start the gateway first: quantclaw gateway run"
-               << std::endl;
+           std::cerr << "No log file found at: " << log_file.string()
+                     << std::endl;
+           std::cerr << "Start the gateway first: quantclaw gateway run"
+                     << std::endl;
            return 1;
 #else
            // Try journalctl on Linux
@@ -1340,8 +1338,7 @@ int main(int argc, char* argv[]) {
          }
          std::ifstream f(log_file);
          if (!f.is_open()) {
-           std::cerr << "Cannot open: "
-                     << log_file.string() << std::endl;
+           std::cerr << "Cannot open: " << log_file.string() << std::endl;
            return 1;
          }
          std::deque<std::string> tail_lines;

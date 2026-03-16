@@ -408,11 +408,7 @@ void register_rpc_handlers(
                            }
                            bool deleted =
                                session_manager->DeleteSession(session_key);
-                           if (!deleted) {
-                             throw std::runtime_error(
-                                 "session not found: " + session_key);
-                           }
-                           return {{"ok", true}};
+                           return {{"ok", true}, {"deleted", deleted}};
                          });
 
   // --- sessions.reset ---

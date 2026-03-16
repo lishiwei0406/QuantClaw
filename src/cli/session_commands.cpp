@@ -147,14 +147,14 @@ int SessionCommands::HistoryCommand(const std::vector<std::string>& args) {
         }
 
         if (role == "user") {
-          std::cout << "\033[36m[" << ts << "] User:\033[0m "
-                    << content << std::endl;
+          std::cout << "\033[36m[" << ts << "] User:\033[0m " << content
+                    << std::endl;
         } else if (role == "assistant") {
-          std::cout << "\033[32m[" << ts << "] Assistant:\033[0m "
-                    << content << std::endl;
+          std::cout << "\033[32m[" << ts << "] Assistant:\033[0m " << content
+                    << std::endl;
         } else {
-          std::cout << "[" << ts << "] " << role << ": "
-                    << content << std::endl;
+          std::cout << "[" << ts << "] " << role << ": " << content
+                    << std::endl;
         }
         std::cout << std::endl;
       }
