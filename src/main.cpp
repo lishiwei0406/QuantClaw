@@ -16,6 +16,7 @@
 #include <spdlog/spdlog.h>
 
 #include "quantclaw/cli/agent_commands.hpp"
+#include "quantclaw/common/parse_util.hpp"
 #include "quantclaw/cli/cli_manager.hpp"
 #include "quantclaw/cli/gateway_commands.hpp"
 #include "quantclaw/cli/onboard_commands.hpp"
@@ -1303,7 +1304,12 @@ int main(int argc, char* argv[]) {
              follow = true;
            }
            if (arg == "-n" && i + 1 < argc) {
-             lines = std::stoi(argv[++i]);
+             if (auto parsed = quantclaw::ParsePositiveInt(argv[++i])) {
+               lines = *parsed;
+             } else {
+               std::cerr << "Invalid value for -n: " << argv[i] << std::endl;
+               return 1;
+             }
            }
          }
 
@@ -1368,10 +1374,10 @@ int main(int argc, char* argv[]) {
            out += "'";
            return out;
          };
-         std::string cmd =
-             follow
-                 ? "tail -f "
-                 : "tail -n " + std::to_string(lines) + " ";
+         std::string cmd = "tail -n " + std::to_string(lines);
+         if (follow)
+           cmd += " -f";
+         cmd += " ";
          cmd += shell_quote(log_file.string());
          return std::system(cmd.c_str());
 #endif
