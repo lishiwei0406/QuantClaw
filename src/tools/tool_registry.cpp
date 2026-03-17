@@ -696,6 +696,7 @@ std::string ToolRegistry::exec_tool(const nlohmann::json& params) {
     throw std::runtime_error("Missing required parameter: command");
   std::string command = params["command"].get<std::string>();
   int timeout = params.value("timeout", 30);
+  std::string workdir = params.value("workdir", "");
 
   if (!quantclaw::SecuritySandbox::ValidateShellCommand(command))
     throw std::runtime_error("Command not allowed: " + command);
@@ -708,10 +709,9 @@ std::string ToolRegistry::exec_tool(const nlohmann::json& params) {
       throw std::runtime_error("Approval timed out: " + command);
   }
 
-  quantclaw::SecuritySandbox::ApplyResourceLimits();
   logger_->info("Executing command: {}", command);
 
-  auto result = platform::exec_capture(command, timeout);
+  auto result = platform::exec_capture(command, timeout, workdir);
   if (result.exit_code == -1)
     throw std::runtime_error("Failed to execute: " + command);
   if (result.exit_code == -2)

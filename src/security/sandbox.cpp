@@ -3,6 +3,8 @@
 
 #include "quantclaw/security/sandbox.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <regex>
 
@@ -75,13 +77,47 @@ std::string Sandbox::SanitizePath(const std::string& path) const {
 }
 
 bool Sandbox::ValidateFilePath(const std::string& path,
-                               const std::string& /*workspace*/) {
-  // Basic path traversal check
-  std::filesystem::path clean = std::filesystem::path(path).lexically_normal();
-  std::string path_str = clean.string();
+                               const std::string& workspace) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+
+  // Resolve the workspace root to an absolute canonical-ish form.
+  fs::path ws_abs = fs::absolute(workspace, ec);
+  if (ec)
+    return false;
+  ws_abs = ws_abs.lexically_normal();
+
+  // Resolve the requested path.
+  fs::path path_abs = fs::absolute(path, ec);
+  if (ec)
+    return false;
+  path_abs = path_abs.lexically_normal();
+
+  // Basic traversal check.
+  std::string path_str = path_abs.string();
   if (path_str.find("..") != std::string::npos) {
     return false;
   }
+
+  // Ensure the resolved path is inside the workspace.
+  std::string ws_str = ws_abs.string();
+  if (path_str.size() < ws_str.size()) {
+    return false;
+  }
+  // Prefix match (case-sensitive on Linux, case-insensitive on Windows).
+#ifdef _WIN32
+  auto to_lower = [](std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return s;
+  };
+  if (to_lower(path_str).rfind(to_lower(ws_str), 0) != 0)
+    return false;
+#else
+  if (path_str.rfind(ws_str, 0) != 0)
+    return false;
+#endif
+
   return true;
 }
 
@@ -102,32 +138,11 @@ bool Sandbox::ValidateShellCommand(const std::string& command) {
 }
 
 void Sandbox::ApplyResourceLimits() {
-#ifdef __linux__
-  // Limit CPU time (30s soft, 60s hard)
-  struct rlimit cpu_limit;
-  cpu_limit.rlim_cur = 30;
-  cpu_limit.rlim_max = 60;
-  setrlimit(RLIMIT_CPU, &cpu_limit);
-
-  // Limit virtual memory (256 MB soft, 512 MB hard)
-  struct rlimit mem_limit;
-  mem_limit.rlim_cur = 256ULL * 1024 * 1024;
-  mem_limit.rlim_max = 512ULL * 1024 * 1024;
-  setrlimit(RLIMIT_AS, &mem_limit);
-
-  // Limit file size (64 MB soft, 128 MB hard)
-  struct rlimit fsize_limit;
-  fsize_limit.rlim_cur = 64ULL * 1024 * 1024;
-  fsize_limit.rlim_max = 128ULL * 1024 * 1024;
-  setrlimit(RLIMIT_FSIZE, &fsize_limit);
-
-  // Limit child processes (32 soft, 64 hard)
-  struct rlimit nproc_limit;
-  nproc_limit.rlim_cur = 32;
-  nproc_limit.rlim_max = 64;
-  setrlimit(RLIMIT_NPROC, &nproc_limit);
-#endif
-  // macOS / Windows: no-op (macOS setrlimit semantics differ, not implemented)
+  // Resource limits are now applied inside exec_capture() on the child
+  // process (via fork + setrlimit before exec on Linux). Calling setrlimit
+  // on the host process would permanently cap the gateway itself.
+  // This function is intentionally a no-op; the actual enforcement lives
+  // in process_unix.cpp.
 }
 
 }  // namespace quantclaw

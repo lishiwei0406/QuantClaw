@@ -3,6 +3,8 @@
 
 #ifndef _WIN32
 
+#include <poll.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -109,31 +111,116 @@ int wait_process(ProcessId pid, int timeout_ms) {
   return -1;  // Timeout
 }
 
-ExecResult exec_capture(const std::string& command, int timeout_seconds) {
+ExecResult exec_capture(const std::string& command, int timeout_seconds,
+                        const std::string& working_dir) {
   ExecResult result;
-  FILE* pipe = popen(command.c_str(), "r");
-  if (!pipe) {
+
+  // Create a pipe for the child's stdout+stderr.
+  int pipefd[2];
+  if (pipe(pipefd) != 0) {
     result.exit_code = -1;
     return result;
   }
 
-  char buffer[1024];
-  auto start = std::chrono::steady_clock::now();
-  while (fgets(buffer, sizeof(buffer), pipe)) {
-    result.output += buffer;
-    if (timeout_seconds > 0) {
-      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-          std::chrono::steady_clock::now() - start);
-      if (elapsed.count() > timeout_seconds) {
-        pclose(pipe);
-        result.exit_code = -2;  // timeout
-        return result;
-      }
-    }
+  pid_t pid = fork();
+  if (pid < 0) {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    result.exit_code = -1;
+    return result;
   }
 
-  int status = pclose(pipe);
-  result.exit_code = WEXITSTATUS(status);
+  if (pid == 0) {
+    // ---- Child process ----
+    close(pipefd[0]);  // close read end
+    dup2(pipefd[1], STDOUT_FILENO);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+
+    // Change working directory if requested.
+    if (!working_dir.empty()) {
+      if (chdir(working_dir.c_str()) != 0)
+        _exit(1);
+    }
+
+    // Apply resource limits in the child (not the host process).
+    struct rlimit cpu_lim = {30, 60};
+    setrlimit(RLIMIT_CPU, &cpu_lim);
+    struct rlimit mem_lim = {256ULL * 1024 * 1024, 512ULL * 1024 * 1024};
+    setrlimit(RLIMIT_AS, &mem_lim);
+    struct rlimit fsz_lim = {64ULL * 1024 * 1024, 128ULL * 1024 * 1024};
+    setrlimit(RLIMIT_FSIZE, &fsz_lim);
+    struct rlimit nproc_lim = {32, 64};
+    setrlimit(RLIMIT_NPROC, &nproc_lim);
+
+    execl("/bin/sh", "sh", "-c", command.c_str(), nullptr);
+    _exit(127);
+  }
+
+  // ---- Parent process ----
+  close(pipefd[1]);  // close write end
+
+  auto start = std::chrono::steady_clock::now();
+  auto deadline = (timeout_seconds > 0)
+                      ? start + std::chrono::seconds(timeout_seconds)
+                      : std::chrono::steady_clock::time_point::max();
+
+  char buffer[1024];
+  bool timed_out = false;
+
+  // Use poll() so we never block indefinitely on read.
+  struct pollfd pfd;
+  pfd.fd = pipefd[0];
+  pfd.events = POLLIN;
+
+  for (;;) {
+    int remaining_ms = -1;  // infinite if no timeout
+    if (timeout_seconds > 0) {
+      auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        timed_out = true;
+        break;
+      }
+      remaining_ms = static_cast<int>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now)
+              .count());
+      if (remaining_ms <= 0) {
+        timed_out = true;
+        break;
+      }
+    }
+
+    int pr = poll(&pfd, 1, remaining_ms);
+    if (pr < 0) {
+      if (errno == EINTR)
+        continue;
+      break;  // error
+    }
+    if (pr == 0) {
+      timed_out = true;
+      break;  // poll timed out
+    }
+
+    ssize_t n = read(pipefd[0], buffer, sizeof(buffer) - 1);
+    if (n <= 0)
+      break;  // EOF or error
+    buffer[n] = '\0';
+    result.output += buffer;
+  }
+
+  close(pipefd[0]);
+
+  if (timed_out) {
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+    result.exit_code = -2;
+    return result;
+  }
+
+  int status = 0;
+  waitpid(pid, &status, 0);
+  result.exit_code =
+      WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
   return result;
 }
 

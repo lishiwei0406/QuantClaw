@@ -384,8 +384,12 @@ void register_api_routes(
         }
 
         auto sessions = session_manager->ListSessions();
+        int total = static_cast<int>(sessions.size());
+        if (limit < 0) limit = 0;
+        if (offset < 0) offset = 0;
+        if (offset > total) offset = total;
         nlohmann::json result = nlohmann::json::array();
-        int end = std::min(offset + limit, static_cast<int>(sessions.size()));
+        int end = std::min(offset + limit, total);
         for (int i = offset; i < end; ++i) {
           result.push_back({{"key", sessions[i].session_key},
                             {"id", sessions[i].session_id},
