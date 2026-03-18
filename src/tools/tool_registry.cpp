@@ -18,6 +18,8 @@
 
 #include "quantclaw/core/cron_scheduler.hpp"
 #include "quantclaw/core/memory_search.hpp"
+
+namespace fs = std::filesystem;
 #include "quantclaw/core/subagent.hpp"
 #include "quantclaw/mcp/mcp_tool_manager.hpp"
 #include "quantclaw/platform/process.hpp"
