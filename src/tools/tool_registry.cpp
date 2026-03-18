@@ -700,10 +700,26 @@ std::string ToolRegistry::exec_tool(const nlohmann::json& params) {
   std::string workdir = params.value("workdir", "");
 
   // Validate workdir stays inside the workspace if specified.
-  if (!workdir.empty() &&
-      !quantclaw::SecuritySandbox::ValidateFilePath(workdir, workspace_path_))
-    throw std::runtime_error("Access denied: workdir outside workspace: " +
-                             workdir);
+  std::string resolved_workdir = workdir;
+  if (!workdir.empty()) {
+    if (!quantclaw::SecuritySandbox::ValidateFilePath(workdir, workspace_path_))
+      throw std::runtime_error("Access denied: workdir outside workspace: " +
+                               workdir);
+    // Resolve relative workdir against workspace so exec_capture uses the
+    // correct directory (not gateway CWD).
+    std::error_code ec;
+    fs::path ws_abs = fs::weakly_canonical(workspace_path_, ec);
+    if (!ec) {
+      fs::path wd_path(workdir);
+      if (wd_path.is_relative()) {
+        wd_path = ws_abs / wd_path;
+      }
+      fs::path wd_abs = fs::weakly_canonical(wd_path, ec);
+      if (!ec) {
+        resolved_workdir = wd_abs.string();
+      }
+    }
+  }
 
   if (!quantclaw::SecuritySandbox::ValidateShellCommand(command))
     throw std::runtime_error("Command not allowed: " + command);
@@ -718,7 +734,7 @@ std::string ToolRegistry::exec_tool(const nlohmann::json& params) {
 
   logger_->info("Executing command: {}", command);
 
-  auto result = platform::exec_capture(command, timeout, workdir);
+  auto result = platform::exec_capture(command, timeout, resolved_workdir);
   if (result.exit_code == -1)
     throw std::runtime_error("Failed to execute: " + command);
   if (result.exit_code == -2)
