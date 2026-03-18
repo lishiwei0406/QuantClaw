@@ -89,16 +89,12 @@ TEST_F(SandboxTest, ValidateFilePath) {
   EXPECT_FALSE(
       quantclaw::Sandbox::ValidateFilePath("../../etc/passwd", "/tmp"));
   // Absolute path outside workspace must be rejected.
-  EXPECT_FALSE(
-      quantclaw::Sandbox::ValidateFilePath("/etc/passwd", "/tmp"));
+  EXPECT_FALSE(quantclaw::Sandbox::ValidateFilePath("/etc/passwd", "/tmp"));
 #ifdef _WIN32
-  EXPECT_FALSE(
-      quantclaw::Sandbox::ValidateFilePath("C:\\Windows\\win.ini",
-                                           "C:\\Users\\test\\workspace"));
-  EXPECT_TRUE(
-      quantclaw::Sandbox::ValidateFilePath(
-          "C:\\Users\\test\\workspace\\file.txt",
-          "C:\\Users\\test\\workspace"));
+  EXPECT_FALSE(quantclaw::Sandbox::ValidateFilePath(
+      "C:\\Windows\\win.ini", "C:\\Users\\test\\workspace"));
+  EXPECT_TRUE(quantclaw::Sandbox::ValidateFilePath(
+      "C:\\Users\\test\\workspace\\file.txt", "C:\\Users\\test\\workspace"));
 #endif
 }
 

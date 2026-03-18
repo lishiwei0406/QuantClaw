@@ -385,11 +385,15 @@ void register_api_routes(
 
         auto sessions = session_manager->ListSessions();
         int total = static_cast<int>(sessions.size());
-        if (limit < 0) limit = 0;
-        if (offset < 0) offset = 0;
-        if (offset > total) offset = total;
+        if (limit < 0)
+          limit = 0;
+        if (offset < 0)
+          offset = 0;
+        if (offset > total)
+          offset = total;
         // Clamp limit to avoid integer overflow in offset + limit.
-        if (limit > total - offset) limit = total - offset;
+        if (limit > total - offset)
+          limit = total - offset;
         nlohmann::json result = nlohmann::json::array();
         int end = offset + limit;
         for (int i = offset; i < end; ++i) {

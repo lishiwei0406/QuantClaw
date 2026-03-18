@@ -159,11 +159,11 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
   PROCESS_INFORMATION pi = {};
-  BOOL ok = CreateProcessA(
-      nullptr, cmd_buf.data(), nullptr, nullptr,
-      TRUE,  // inherit handles
-      CREATE_NO_WINDOW, nullptr,
-      working_dir.empty() ? nullptr : working_dir.c_str(), &si, &pi);
+  BOOL ok = CreateProcessA(nullptr, cmd_buf.data(), nullptr, nullptr,
+                           TRUE,  // inherit handles
+                           CREATE_NO_WINDOW, nullptr,
+                           working_dir.empty() ? nullptr : working_dir.c_str(),
+                           &si, &pi);
 
   CloseHandle(write_pipe);  // parent closes write end
 
@@ -208,8 +208,8 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
     }
     if (avail == 0) {
       // No data; wait briefly for process or new data.
-      DWORD wr = WaitForSingleObject(pi.hProcess,
-                                     remaining < 100 ? remaining : 100);
+      DWORD wr =
+          WaitForSingleObject(pi.hProcess, remaining < 100 ? remaining : 100);
       if (wr == WAIT_OBJECT_0) {
         // Process exited; drain remaining output.
         DWORD bytes_read = 0;
