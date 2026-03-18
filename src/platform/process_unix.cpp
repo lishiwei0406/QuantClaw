@@ -3,6 +3,7 @@
 
 #ifndef _WIN32
 
+#include <poll.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -15,11 +16,8 @@
 #include <cstring>
 #include <thread>
 
-#include "quantclaw/platform/process.hpp"
-
-#include <poll.h>
-
 #include "quantclaw/common/defer.hpp"
+#include "quantclaw/platform/process.hpp"
 
 namespace quantclaw::platform {
 
