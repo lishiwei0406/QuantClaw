@@ -269,8 +269,8 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
     waitpid(pid, &child_status, 0);
   }
 
-  result.exit_code =
-      WIFEXITED(child_status) ? WEXITSTATUS(child_status) : 128 + WTERMSIG(child_status);
+  result.exit_code = WIFEXITED(child_status) ? WEXITSTATUS(child_status)
+                                             : 128 + WTERMSIG(child_status);
   return result;
 }
 
