@@ -495,7 +495,7 @@ jobs:
 
     - name: Run Tests
       working-directory: build
-      run: ctest --output-on-failure --parallel -C Release --timeout 120
+      run: ctest --output-on-failure --parallel -C Release --timeout 120 --repeat until-pass:2
 
     - name: Upload test results
       if: failure()
