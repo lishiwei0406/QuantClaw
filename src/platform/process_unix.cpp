@@ -192,6 +192,8 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
 
   char buffer[1024];
   bool timed_out = false;
+  int child_status = -1;  // Track child exit status; -1 means not yet reaped
+  bool child_reaped = false;
 
   // Use poll() so we never block indefinitely on read.
   struct pollfd pfd;
@@ -240,7 +242,9 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
       int status;
       pid_t result_pid = waitpid(pid, &status, WNOHANG);
       if (result_pid == pid) {
-        // Process exited
+        // Process exited - save status and exit loop
+        child_status = status;
+        child_reaped = true;
         break;
       }
       // Still running; continue loop to enforce timeout.
@@ -260,10 +264,13 @@ ExecResult exec_capture(const std::string& command, int timeout_seconds,
     return result;
   }
 
-  int status = 0;
-  waitpid(pid, &status, 0);
+  // If we haven't reaped the child yet, do it now
+  if (!child_reaped) {
+    waitpid(pid, &child_status, 0);
+  }
+
   result.exit_code =
-      WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+      WIFEXITED(child_status) ? WEXITSTATUS(child_status) : 128 + WTERMSIG(child_status);
   return result;
 }
 
