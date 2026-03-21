@@ -1,13 +1,9 @@
 import {
   CORE_TOOL_GROUPS,
   resolveCoreToolProfilePolicy,
+  type ToolProfilePolicy,
   type ToolProfileId,
 } from "./tool-catalog.js";
-
-type ToolProfilePolicy = {
-  allow?: string[];
-  deny?: string[];
-};
 
 const TOOL_NAME_ALIASES: Record<string, string> = {
   bash: "exec",
@@ -46,4 +42,4 @@ export function resolveToolProfilePolicy(profile?: string): ToolProfilePolicy | 
   return resolveCoreToolProfilePolicy(profile);
 }
 
-export type { ToolProfileId };
+export type { ToolProfileId, ToolProfilePolicy };

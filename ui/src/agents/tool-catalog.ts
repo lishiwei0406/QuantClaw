@@ -1,6 +1,6 @@
 export type ToolProfileId = "minimal" | "coding" | "messaging" | "full";
 
-type ToolProfilePolicy = {
+export type ToolProfilePolicy = {
   allow?: string[];
   deny?: string[];
 };
@@ -258,7 +258,7 @@ const CORE_TOOL_PROFILES: Record<ToolProfileId, ToolProfilePolicy> = {
   full: {},
 };
 
-function buildCoreToolGroupMap() {
+function buildCoreToolGroupMap(): Readonly<Record<string, readonly string[]>> {
   const sectionToolMap = new Map<string, string[]>();
   for (const tool of CORE_TOOL_DEFINITIONS) {
     const groupId = `group:${tool.sectionId}`;
@@ -269,10 +269,15 @@ function buildCoreToolGroupMap() {
   const openclawTools = CORE_TOOL_DEFINITIONS.filter((tool) => tool.includeInOpenClawGroup).map(
     (tool) => tool.id,
   );
-  return {
-    "group:openclaw": openclawTools,
-    ...Object.fromEntries(sectionToolMap.entries()),
-  };
+  return Object.freeze({
+    "group:openclaw": Object.freeze([...openclawTools]),
+    ...Object.fromEntries(
+      [...sectionToolMap.entries()].map(([groupId, tools]) => [
+        groupId,
+        Object.freeze([...tools]),
+      ]),
+    ),
+  });
 }
 
 export const CORE_TOOL_GROUPS = buildCoreToolGroupMap();
