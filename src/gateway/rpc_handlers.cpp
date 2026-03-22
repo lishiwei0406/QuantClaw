@@ -191,7 +191,7 @@ void register_rpc_handlers(
       quantclaw::MessageCommandParser cmd_parser(std::move(cmd_handlers));
       auto cmd_result = cmd_parser.Parse(message, session_key);
       if (cmd_result.handled) {
-        return {session_key, cmd_result.reply};
+        return {session_key, cmd_result.reply, ""};
       }
     }
 
