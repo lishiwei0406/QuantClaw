@@ -93,9 +93,6 @@ class FeishuAdapter extends ChannelAdapter {
       return;
     }
 
-    // Debug: log sender structure
-    console.log("[feishu] Sender structure:", JSON.stringify(sender, null, 2));
-
     // Extract chat info from message object
     const chatId = message.chat_id;
     const chatType = message.chat_type;
@@ -107,8 +104,13 @@ class FeishuAdapter extends ChannelAdapter {
     const senderName =
       sender?.display_name || sender?.simple_name || senderUserId;
 
-    // Ignore own messages
-    if (senderUserId === this.appId) return;
+    // Ignore own messages (bot messages have sender_type === "app")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const senderType = (sender as any)?.sender_type;
+    const senderId = (sender as any)?.sender_id?.id;
+    if (senderType === "app" && senderId === this.appId) {
+      return;
+    }
 
     // Parse message content
     let content = message.content ?? "";
@@ -143,18 +145,15 @@ class FeishuAdapter extends ChannelAdapter {
       }
 
       // Check if bot is mentioned
-      console.log(
-        "[feishu] Group message mentions:",
-        JSON.stringify(message.mentions, null, 2),
-      );
-      console.log("[feishu] Bot name:", this.botName, "App ID:", this.appId);
-
       const botMentioned = message.mentions?.some((m) => {
+        // Check by name or by ID (for app users, id.id contains the app_id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mentionId = (m.id as any)?.id;
         const mentioned =
           m.name === this.botName ||
+          mentionId === this.appId ||
           m.id?.user_id === this.appId ||
           m.id?.open_id === this.appId;
-        console.log("[feishu] Check mention:", m.name, m.id, "->", mentioned);
         return mentioned;
       });
 

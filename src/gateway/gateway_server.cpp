@@ -62,6 +62,17 @@ void GatewayServer::Stop() {
     server_.reset();
   }
 
+  // Join all async handler threads for graceful shutdown
+  {
+    std::lock_guard<std::mutex> lock(async_threads_mutex_);
+    for (auto& t : async_threads_) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    async_threads_.clear();
+  }
+
   std::lock_guard<std::mutex> lock(connections_mutex_);
   connections_.clear();
   ws_connections_.clear();
@@ -424,8 +435,8 @@ void GatewayServer::handle_rpc_request(const std::string& conn_id,
     std::string req_method = request.method;
     nlohmann::json req_params = request.params;
     ClientConnection client_copy = *client;
-    std::thread([this, req_id, req_method, req_params,
-                 client_copy = std::move(client_copy), handler]() mutable {
+    std::thread t([this, req_id, req_method, req_params,
+                   client_copy = std::move(client_copy), handler]() mutable {
       try {
         auto result = handler(req_params, client_copy);
         SendResponseTo(client_copy.connection_id, req_id, true, result);
@@ -434,7 +445,17 @@ void GatewayServer::handle_rpc_request(const std::string& conn_id,
         SendResponseTo(client_copy.connection_id, req_id, false,
                        {{"error", e.what()}, {"code", "HANDLER_ERROR"}});
       }
-    }).detach();
+    });
+    // Track thread for graceful shutdown
+    {
+      std::lock_guard<std::mutex> lock(async_threads_mutex_);
+      async_threads_.push_back(std::move(t));
+      // Clean up finished threads periodically
+      async_threads_.erase(
+          std::remove_if(async_threads_.begin(), async_threads_.end(),
+                         [](std::thread& th) { return !th.joinable(); }),
+          async_threads_.end());
+    }
     return;
   }
 

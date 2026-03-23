@@ -163,7 +163,7 @@ export function renderOverview(props: OverviewProps) {
     }
     return html`
       <div class="muted" style="margin-top: 8px">
-        ${t("overview.insecure.hint", { url: "http://127.0.0.1:18789" })}
+        ${t("overview.insecure.hint", { url: "http://127.0.0.1:18800" })}
         <div style="margin-top: 6px">
           ${t("overview.insecure.stayHttp", { config: "gateway.controlUi.allowInsecureAuth: true" })}
         </div>
