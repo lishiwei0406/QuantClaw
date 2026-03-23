@@ -295,6 +295,10 @@ TEST_F(RpcHandlersTest, ChatSendPropagatesStreamingErrors) {
               std::string::npos);
   }
 
+  // Reset mock state to avoid test pollution
+  mock_llm_->stream_should_fail = false;
+  mock_llm_->stream_error_message.clear();
+
   client->Disconnect();
 }
 

@@ -21,7 +21,11 @@ export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     // Gateway WebSocket runs on port 18800, while HTTP API/UI is on 18801
-    const host = location.hostname + ":18800";
+    // Handle IPv6 literals by wrapping in brackets
+    const hostname = location.hostname;
+    const host = hostname.includes(":") && !hostname.startsWith("[")
+      ? `[${hostname}]:18800`  // IPv6 literal
+      : `${hostname}:18800`;   // IPv4 or hostname
     return `${proto}://${host}`;
   })();
 

@@ -95,11 +95,7 @@ bool ChannelAdapterManager::launch_adapter(AdapterProcess& adapter,
     if (dot != std::string::npos) {
       js_path.replace(dot, 3, ".js");
     }
-#ifdef _WIN32
     args = {"node", js_path};
-#else
-    args = {"node", js_path};
-#endif
     pid = platform::spawn_process(args, env, script_dir);
   }
 

@@ -586,8 +586,8 @@ void register_rpc_handlers(
         std::string idempotency_key = params.value("idempotencyKey", "");
         auto result = execute_agent_request(
             params, client,
-            [&server, &client, logger, &session_key,
-             &idempotency_key](const quantclaw::AgentEvent& event) {
+            [&server, &client, logger, session_key,
+             idempotency_key](const quantclaw::AgentEvent& event) {
               RpcEvent rpc_event;
 
               if (event.type == events::kTextDelta) {
