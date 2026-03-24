@@ -401,16 +401,29 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
 
       provider->ChatCompletionStream(
           request, [&](const ChatCompletionResponse& chunk) {
+            // Some providers report usage only on the final stream marker.
+            stream_usage.prompt_tokens += chunk.usage.prompt_tokens;
+            stream_usage.completion_tokens += chunk.usage.completion_tokens;
+
+            if (chunk.is_stream_end) {
+              // Providers normally send an empty final marker, but some tests
+              // and adapters attach the full text to the end chunk. Preserve
+              // that fallback without duplicating already streamed content.
+              if (full_response.empty() && !chunk.content.empty()) {
+                full_response = chunk.content;
+              }
+              if (callback) {
+                callback({events::kMessageEnd, {{"content", full_response}}});
+              }
+              return;
+            }
+
             if (!chunk.content.empty()) {
               full_response += chunk.content;
               if (callback) {
                 callback({events::kTextDelta, {{"text", chunk.content}}});
               }
             }
-
-            // Accumulate usage from stream chunks
-            stream_usage.prompt_tokens += chunk.usage.prompt_tokens;
-            stream_usage.completion_tokens += chunk.usage.completion_tokens;
 
             if (!chunk.tool_calls.empty()) {
               for (const auto& tc : chunk.tool_calls) {
@@ -470,12 +483,6 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
               }
               iterations++;
               return;  // Continue loop for tool results
-            }
-
-            if (chunk.is_stream_end) {
-              if (callback) {
-                callback({events::kMessageEnd, {{"content", full_response}}});
-              }
             }
           });
 

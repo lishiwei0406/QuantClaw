@@ -31,6 +31,7 @@ std::string ChannelAdapterManager::find_adapter_script(
 
   std::vector<std::string> search_paths = {
       home + "/.quantclaw/src/adapters/" + channel_name + ".ts",
+      home + "/.quantclaw/adapters/" + channel_name + ".ts",
   };
 
   // Relative to the executable's directory
@@ -40,8 +41,12 @@ std::string ChannelAdapterManager::find_adapter_script(
     search_paths.push_back(
         (exe_dir / "src/adapters" / (channel_name + ".ts")).string());
     search_paths.push_back(
+        (exe_dir / "adapters" / (channel_name + ".ts")).string());
+    search_paths.push_back(
         (exe_dir.parent_path() / "src/adapters" / (channel_name + ".ts"))
             .string());
+    search_paths.push_back(
+        (exe_dir.parent_path() / "adapters" / (channel_name + ".ts")).string());
   } catch (const std::exception&) {}
 
   for (const auto& path : search_paths) {
@@ -95,11 +100,7 @@ bool ChannelAdapterManager::launch_adapter(AdapterProcess& adapter,
     if (dot != std::string::npos) {
       js_path.replace(dot, 3, ".js");
     }
-#ifdef _WIN32
     args = {"node", js_path};
-#else
-    args = {"node", js_path};
-#endif
     pid = platform::spawn_process(args, env, script_dir);
   }
 
