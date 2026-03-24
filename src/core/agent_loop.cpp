@@ -3,6 +3,8 @@
 
 #include "quantclaw/core/agent_loop.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <sstream>
 #include <thread>
@@ -25,6 +27,44 @@
 namespace events = quantclaw::gateway::events;
 
 namespace quantclaw {
+
+static bool has_non_whitespace(const std::string& value) {
+  return std::any_of(value.begin(), value.end(),
+                     [](unsigned char ch) { return !std::isspace(ch); });
+}
+
+static std::vector<ToolCall>
+filter_valid_tool_calls(const std::vector<ToolCall>& tool_calls,
+                        const std::shared_ptr<spdlog::logger>& logger,
+                        bool* saw_invalid = nullptr) {
+  std::vector<ToolCall> valid;
+  bool invalid = false;
+
+  for (const auto& tc : tool_calls) {
+    if (!has_non_whitespace(tc.name)) {
+      invalid = true;
+      if (logger) {
+        logger->warn("Ignoring invalid tool call with empty name (id='{}')",
+                     tc.id);
+      }
+      continue;
+    }
+    valid.push_back(tc);
+  }
+
+  if (saw_invalid) {
+    *saw_invalid = invalid;
+  }
+  return valid;
+}
+
+static constexpr const char* kInvalidToolCallStopText =
+    "I couldn't continue because the model emitted an invalid tool call. "
+    "Please try again.";
+
+static constexpr const char* kEmptyStreamStopText =
+    "I couldn't complete that request because the model returned no usable "
+    "response. Please try again.";
 
 // Truncate a tool result if it exceeds the limit (head + tail with ellipsis)
 static std::string truncate_tool_result(const std::string& result,
@@ -212,12 +252,15 @@ std::vector<Message> AgentLoop::ProcessMessage(
                                           session_key_);
       }
 
-      if (!response.tool_calls.empty()) {
-        logger_->info("LLM requested {} tool calls",
-                      response.tool_calls.size());
+      bool saw_invalid_tool_call = false;
+      auto valid_tool_calls = filter_valid_tool_calls(
+          response.tool_calls, logger_, &saw_invalid_tool_call);
+
+      if (!valid_tool_calls.empty()) {
+        logger_->info("LLM requested {} tool calls", valid_tool_calls.size());
 
         std::vector<nlohmann::json> tool_calls_json;
-        for (const auto& tc : response.tool_calls) {
+        for (const auto& tc : valid_tool_calls) {
           nlohmann::json tc_json;
           tc_json["id"] = tc.id;
           tc_json["function"]["name"] = tc.name;
@@ -238,7 +281,7 @@ std::vector<Message> AgentLoop::ProcessMessage(
         if (!response.content.empty())
           assistant_msg.content.push_back(
               ContentBlock::MakeText(response.content));
-        for (const auto& tc : response.tool_calls)
+        for (const auto& tc : valid_tool_calls)
           assistant_msg.content.push_back(
               ContentBlock::MakeToolUse(tc.id, tc.name, tc.arguments));
         request.messages.push_back(assistant_msg);
@@ -247,14 +290,24 @@ std::vector<Message> AgentLoop::ProcessMessage(
         // Tool results: single user message with tool_result blocks
         Message results_msg;
         results_msg.role = "user";
-        for (size_t i = 0; i < response.tool_calls.size(); i++)
+        for (size_t i = 0; i < valid_tool_calls.size(); i++)
           results_msg.content.push_back(ContentBlock::MakeToolResult(
-              response.tool_calls[i].id, tool_results[i]));
+              valid_tool_calls[i].id, tool_results[i]));
         request.messages.push_back(results_msg);
         new_messages.push_back(results_msg);
 
         iterations++;
         continue;
+      }
+
+      if (saw_invalid_tool_call && response.content.empty()) {
+        logger_->error("LLM returned only invalid tool calls");
+        Message final_msg;
+        final_msg.role = "assistant";
+        final_msg.content.push_back(
+            ContentBlock::MakeText(kInvalidToolCallStopText));
+        new_messages.push_back(final_msg);
+        return new_messages;
       }
 
       if (!response.content.empty()) {
@@ -398,6 +451,9 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
     try {
       std::string full_response;
       TokenUsage stream_usage;
+      bool handled_tool_calls = false;
+      bool saw_invalid_tool_call = false;
+      bool saw_stream_end = false;
 
       provider->ChatCompletionStream(
           request, [&](const ChatCompletionResponse& chunk) {
@@ -406,14 +462,12 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
             stream_usage.completion_tokens += chunk.usage.completion_tokens;
 
             if (chunk.is_stream_end) {
+              saw_stream_end = true;
               // Providers normally send an empty final marker, but some tests
               // and adapters attach the full text to the end chunk. Preserve
               // that fallback without duplicating already streamed content.
               if (full_response.empty() && !chunk.content.empty()) {
                 full_response = chunk.content;
-              }
-              if (callback) {
-                callback({events::kMessageEnd, {{"content", full_response}}});
               }
               return;
             }
@@ -426,7 +480,17 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
             }
 
             if (!chunk.tool_calls.empty()) {
-              for (const auto& tc : chunk.tool_calls) {
+              bool chunk_has_invalid = false;
+              auto valid_tool_calls = filter_valid_tool_calls(
+                  chunk.tool_calls, logger_, &chunk_has_invalid);
+              saw_invalid_tool_call =
+                  saw_invalid_tool_call || chunk_has_invalid;
+              if (valid_tool_calls.empty()) {
+                return;
+              }
+
+              handled_tool_calls = true;
+              for (const auto& tc : valid_tool_calls) {
                 if (callback) {
                   callback({events::kToolUse,
                             {{"id", tc.id},
@@ -481,8 +545,7 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
                   new_messages.push_back(results_msg);
                 }
               }
-              iterations++;
-              return;  // Continue loop for tool results
+              return;
             }
           });
 
@@ -502,11 +565,50 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
                                           session_key_);
       }
 
+      if (handled_tool_calls) {
+        iterations++;
+        continue;
+      }
+
       // If we got a final response without tool calls, we're done
       if (!full_response.empty()) {
+        if (callback) {
+          callback({events::kMessageEnd, {{"content", full_response}}});
+        }
         Message final_msg;
         final_msg.role = "assistant";
         final_msg.content.push_back(ContentBlock::MakeText(full_response));
+        new_messages.push_back(final_msg);
+        return new_messages;
+      }
+
+      if (saw_invalid_tool_call) {
+        if (callback) {
+          callback(
+              {events::kMessageEnd, {{"content", kInvalidToolCallStopText}}});
+        }
+        Message final_msg;
+        final_msg.role = "assistant";
+        final_msg.content.push_back(
+            ContentBlock::MakeText(kInvalidToolCallStopText));
+        new_messages.push_back(final_msg);
+        return new_messages;
+      }
+
+      if (saw_stream_end) {
+        logger_->debug(
+            "Empty streaming response details: handled_tool_calls={}, "
+            "saw_invalid_tool_call={}, full_response_size={}",
+            handled_tool_calls, saw_invalid_tool_call, full_response.size());
+        logger_->error(
+            "Streaming response ended without text or valid tool calls");
+        if (callback) {
+          callback({events::kMessageEnd, {{"content", kEmptyStreamStopText}}});
+        }
+        Message final_msg;
+        final_msg.role = "assistant";
+        final_msg.content.push_back(
+            ContentBlock::MakeText(kEmptyStreamStopText));
         new_messages.push_back(final_msg);
         return new_messages;
       }

@@ -310,7 +310,6 @@ TEST_F(RpcHandlersTest, ChatSendPropagatesStreamingErrors) {
   // Reset mock state to avoid test pollution
   mock_llm_->stream_should_fail = false;
   mock_llm_->stream_error_message.clear();
-
   client->Disconnect();
 }
 
@@ -402,7 +401,6 @@ TEST_F(RpcHandlersTest, ChatSendEmitsErrorEventInsteadOfBlankFinalOnFailure) {
   mock_llm_->stream_should_fail = false;
   mock_llm_->stream_error_message.clear();
   mock_llm_->stream_chunks = {"mock reply"};
-
   client->Disconnect();
 }
 
