@@ -19,16 +19,16 @@
 
 namespace quantclaw::platform {
 
-namespace {
-
 #ifdef __APPLE__
 constexpr const char* kServiceLabel = "com.quantclaw.gateway";
 #else
 constexpr const char* kServiceLabel = "quantclaw-gateway";
 #endif
 
+namespace detail {
+
 #ifdef __APPLE__
-std::string shell_quote(const std::string& value) {
+std::string shell_quote(std::string_view value) {
   std::string quoted = "'";
   for (char ch : value) {
     if (ch == '\'') {
@@ -41,7 +41,7 @@ std::string shell_quote(const std::string& value) {
   return quoted;
 }
 
-std::string xml_escape(const std::string& value) {
+std::string xml_escape(std::string_view value) {
   std::string escaped;
   escaped.reserve(value.size());
   for (char ch : value) {
@@ -69,6 +69,10 @@ std::string xml_escape(const std::string& value) {
   return escaped;
 }
 #endif
+
+}  // namespace detail
+
+namespace {
 
 int parse_pid_from_string(std::string_view value) {
   for (size_t i = 0; i < value.size(); ++i) {
@@ -110,8 +114,10 @@ std::string launchd_target() {
 }
 
 ExecResult launchd_print_state() {
-  return exec_capture(
-      "launchctl print " + shell_quote(launchd_target()) + " 2>/dev/null", 5);
+  return exec_capture("launchctl print " +
+                          detail::shell_quote(launchd_target()) +
+                          " 2>/dev/null",
+                      5);
 }
 
 bool launchd_is_loaded() {
@@ -121,7 +127,7 @@ bool launchd_is_loaded() {
 int launchd_bootout(std::shared_ptr<spdlog::logger> logger,
                     std::string_view context, bool quiet_if_missing = false) {
   const int ret = std::system(
-      ("launchctl bootout " + shell_quote(launchd_target())).c_str());
+      ("launchctl bootout " + detail::shell_quote(launchd_target())).c_str());
   if (ret != 0 && !(quiet_if_missing && !launchd_is_loaded())) {
     logger->warn("launchctl bootout returned {} during {}", ret, context);
   }
@@ -165,29 +171,29 @@ int ServiceManager::install(int port) {
       << "<plist version=\"1.0\">\n"
       << "<dict>\n"
       << "  <key>Label</key>\n"
-      << "  <string>" << xml_escape(kServiceLabel) << "</string>\n"
+      << "  <string>" << detail::xml_escape(kServiceLabel) << "</string>\n"
       << "  <key>ProgramArguments</key>\n"
       << "  <array>\n"
-      << "    <string>" << xml_escape(exe) << "</string>\n"
+      << "    <string>" << detail::xml_escape(exe) << "</string>\n"
       << "    <string>gateway</string>\n"
       << "    <string>run</string>\n"
       << "    <string>--port</string>\n"
       << "    <string>" << port << "</string>\n"
       << "  </array>\n"
       << "  <key>WorkingDirectory</key>\n"
-      << "  <string>" << xml_escape(state_dir_) << "</string>\n"
+      << "  <string>" << detail::xml_escape(state_dir_) << "</string>\n"
       << "  <key>RunAtLoad</key>\n"
       << "  <true/>\n"
       << "  <key>KeepAlive</key>\n"
       << "  <true/>\n"
       << "  <key>StandardOutPath</key>\n"
-      << "  <string>" << xml_escape(log_file_) << "</string>\n"
+      << "  <string>" << detail::xml_escape(log_file_) << "</string>\n"
       << "  <key>StandardErrorPath</key>\n"
-      << "  <string>" << xml_escape(log_file_) << "</string>\n"
+      << "  <string>" << detail::xml_escape(log_file_) << "</string>\n"
       << "  <key>EnvironmentVariables</key>\n"
       << "  <dict>\n"
       << "    <key>HOME</key>\n"
-      << "    <string>" << xml_escape(home_directory()) << "</string>\n"
+      << "    <string>" << detail::xml_escape(home_directory()) << "</string>\n"
       << "    <key>QUANTCLAW_LOG_LEVEL</key>\n"
       << "    <string>info</string>\n"
       << "  </dict>\n"
@@ -289,7 +295,8 @@ int ServiceManager::start() {
   }
 
   int ret = std::system(("launchctl bootstrap " +
-                         shell_quote(launchd_domain()) + " " + shell_quote(svc))
+                         detail::shell_quote(launchd_domain()) + " " +
+                         detail::shell_quote(svc))
                             .c_str());
   if (ret != 0) {
     if (!launchd_is_loaded()) {
@@ -302,7 +309,8 @@ int ServiceManager::start() {
         ret);
   }
 
-  ret = std::system(("launchctl kickstart -k " + shell_quote(target)).c_str());
+  ret = std::system(
+      ("launchctl kickstart -k " + detail::shell_quote(target)).c_str());
   if (ret == 0) {
     logger_->info("Gateway started via launchd");
   } else {
@@ -324,7 +332,8 @@ int ServiceManager::start() {
 int ServiceManager::stop() {
 #ifdef __APPLE__
   auto target = launchd_target();
-  int ret = std::system(("launchctl bootout " + shell_quote(target)).c_str());
+  int ret =
+      std::system(("launchctl bootout " + detail::shell_quote(target)).c_str());
   if (ret == 0) {
     logger_->info("Gateway stopped");
     remove_pid();
