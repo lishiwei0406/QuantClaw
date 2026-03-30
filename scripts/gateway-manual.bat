@@ -55,7 +55,7 @@ echo [信息] 日志文件: %LOG_DIR%\gateway-manual.log
 echo.
 echo [%DATE% %TIME%] Gateway started manually >> "%LOG_DIR%\gateway-manual.log"
 
-"%QUANTCLAW_EXE%" gateway run 2>&1 | tee "%LOG_DIR%\gateway-manual.log"
+"%QUANTCLAW_EXE%" gateway run 2>&1 | powershell -NoProfile -Command "ForEach-Object { $_ | Tee-Object -FilePath '%LOG_DIR%\gateway-manual.log' -Append }; exit $LASTEXITCODE"
 
 REM 检查退出代码
 if %ERRORLEVEL% neq 0 (

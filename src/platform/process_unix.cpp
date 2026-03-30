@@ -289,7 +289,7 @@ std::string executable_path() {
     spdlog::warn(
         "Failed to determine executable path on macOS: _NSGetExecutablePath "
         "returned a zero-length buffer");
-    return "quantclaw";
+    return "";
   }
 
   std::string buffer(size, '\0');
@@ -298,7 +298,7 @@ std::string executable_path() {
         "Failed to determine executable path on macOS: _NSGetExecutablePath "
         "could not populate a {}-byte buffer",
         size);
-    return "quantclaw";
+    return "";
   }
 
   char resolved[PATH_MAX];

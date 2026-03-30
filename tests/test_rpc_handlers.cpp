@@ -343,17 +343,16 @@ TEST_F(RpcHandlersTest, ChatSendEmitsCumulativeDeltaAndStructuredFinalEvent) {
     std::unique_lock<std::mutex> lock(events_mutex);
     ASSERT_TRUE(events_cv.wait_for(lock, std::chrono::seconds(3),
                                    [&] { return chat_events.size() >= 3; }));
+    ASSERT_GE(chat_events.size(), 3u);
+    EXPECT_EQ(chat_events[0].value("state", ""), "delta");
+    EXPECT_EQ(chat_events[0]["message"].value("content", ""), "mock ");
+    EXPECT_EQ(chat_events[1].value("state", ""), "delta");
+    EXPECT_EQ(chat_events[1]["message"].value("content", ""), "mock reply");
+    EXPECT_EQ(chat_events.back().value("state", ""), "final");
+    EXPECT_EQ(chat_events.back()["message"].value("content", ""), "mock reply");
+    EXPECT_EQ(chat_events.back().value("runId", ""), "run-test-2");
+    EXPECT_EQ(chat_events.back().value("sessionKey", ""), "main");
   }
-
-  ASSERT_GE(chat_events.size(), 3u);
-  EXPECT_EQ(chat_events[0].value("state", ""), "delta");
-  EXPECT_EQ(chat_events[0]["message"].value("content", ""), "mock ");
-  EXPECT_EQ(chat_events[1].value("state", ""), "delta");
-  EXPECT_EQ(chat_events[1]["message"].value("content", ""), "mock reply");
-  EXPECT_EQ(chat_events.back().value("state", ""), "final");
-  EXPECT_EQ(chat_events.back()["message"].value("content", ""), "mock reply");
-  EXPECT_EQ(chat_events.back().value("runId", ""), "run-test-2");
-  EXPECT_EQ(chat_events.back().value("sessionKey", ""), "main");
 
   client->Disconnect();
 }
@@ -389,14 +388,13 @@ TEST_F(RpcHandlersTest, ChatSendEmitsErrorEventInsteadOfBlankFinalOnFailure) {
     std::unique_lock<std::mutex> lock(events_mutex);
     ASSERT_TRUE(events_cv.wait_for(lock, std::chrono::seconds(3),
                                    [&] { return !chat_events.empty(); }));
+    ASSERT_FALSE(chat_events.empty());
+    EXPECT_EQ(chat_events.back().value("state", ""), "error");
+    EXPECT_NE(chat_events.back()
+                  .value("errorMessage", "")
+                  .find("mock chat stream blew up"),
+              std::string::npos);
   }
-
-  ASSERT_FALSE(chat_events.empty());
-  EXPECT_EQ(chat_events.back().value("state", ""), "error");
-  EXPECT_NE(chat_events.back()
-                .value("errorMessage", "")
-                .find("mock chat stream blew up"),
-            std::string::npos);
 
   mock_llm_->stream_should_fail = false;
   mock_llm_->stream_error_message.clear();

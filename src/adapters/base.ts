@@ -184,8 +184,8 @@ export abstract class ChannelAdapter {
   }
 
   private acquireSingleInstanceLock(): boolean {
-    const lockDir = path.join(os.tmpdir(), "quantclaw-adapter-locks");
-    fs.mkdirSync(lockDir, { recursive: true });
+    const lockDir = path.join(os.homedir(), ".quantclaw", "adapter-locks");
+    fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
     this.lockPath = path.join(lockDir, `${this.channelName}.lock`);
 
     while (true) {
@@ -201,7 +201,13 @@ export abstract class ChannelAdapter {
         }
 
         const ownerPid = this.readLockOwnerPid();
-        if (ownerPid !== null && this.isProcessAlive(ownerPid)) {
+        if (ownerPid === null) {
+          console.warn(
+            `[adapter] '${this.channelName}' lock owner is not readable yet; assuming another instance is still starting.`
+          );
+          return false;
+        }
+        if (this.isProcessAlive(ownerPid)) {
           console.warn(
             `[adapter] Another '${this.channelName}' adapter instance is already active (PID ${ownerPid}); entering standby.`
           );

@@ -222,19 +222,21 @@ TEST_F(ConfigTest, ExpandHomeUsesUserProfileWhenHomeMissing) {
   test_unsetenv("HOME");
   test_setenv("USERPROFILE", fake_home.string().c_str());
 
+  DEFER({
+    if (!orig_home.empty()) {
+      test_setenv("HOME", orig_home.c_str());
+    } else {
+      test_unsetenv("HOME");
+    }
+    if (!orig_userprofile.empty()) {
+      test_setenv("USERPROFILE", orig_userprofile.c_str());
+    } else {
+      test_unsetenv("USERPROFILE");
+    }
+  });
+
   std::string expanded =
       quantclaw::QuantClawConfig::ExpandHome("~/config.json");
-
-  if (!orig_home.empty()) {
-    test_setenv("HOME", orig_home.c_str());
-  } else {
-    test_unsetenv("HOME");
-  }
-  if (!orig_userprofile.empty()) {
-    test_setenv("USERPROFILE", orig_userprofile.c_str());
-  } else {
-    test_unsetenv("USERPROFILE");
-  }
 
   EXPECT_EQ(expanded, (fake_home / "config.json").string());
 }

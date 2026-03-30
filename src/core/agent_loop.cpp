@@ -300,7 +300,7 @@ std::vector<Message> AgentLoop::ProcessMessage(
         continue;
       }
 
-      if (saw_invalid_tool_call && response.content.empty()) {
+      if (saw_invalid_tool_call && !has_non_whitespace(response.content)) {
         logger_->error("LLM returned only invalid tool calls");
         Message final_msg;
         final_msg.role = "assistant";
@@ -310,7 +310,7 @@ std::vector<Message> AgentLoop::ProcessMessage(
         return new_messages;
       }
 
-      if (!response.content.empty()) {
+      if (has_non_whitespace(response.content)) {
         logger_->info("LLM provided final response");
         Message final_msg;
         final_msg.role = "assistant";
@@ -466,7 +466,7 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
               // Providers normally send an empty final marker, but some tests
               // and adapters attach the full text to the end chunk. Preserve
               // that fallback without duplicating already streamed content.
-              if (full_response.empty() && !chunk.content.empty()) {
+              if (!has_non_whitespace(full_response) && has_non_whitespace(chunk.content)) {
                 full_response = chunk.content;
               }
               return;
@@ -571,7 +571,7 @@ std::vector<Message> AgentLoop::ProcessMessageStream(
       }
 
       // If we got a final response without tool calls, we're done
-      if (!full_response.empty()) {
+      if (has_non_whitespace(full_response)) {
         if (callback) {
           callback({events::kMessageEnd, {{"content", full_response}}});
         }

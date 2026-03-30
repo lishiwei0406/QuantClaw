@@ -586,16 +586,19 @@ void register_rpc_handlers(
         std::string session_key = params.value("sessionKey", "agent:main:main");
         std::string idempotency_key = params.value("idempotencyKey", "");
         std::string streamed_text;
+        std::string accumulated_text;
         auto result = execute_agent_request(
             params, client,
             [&server, &client, logger, session_key, idempotency_key,
-             &streamed_text](const quantclaw::AgentEvent& event) {
+             &streamed_text, &accumulated_text](const quantclaw::AgentEvent& event) {
               RpcEvent rpc_event;
 
               if (event.type == events::kTextDelta) {
                 // agent.text_delta → event "chat" {state:"delta",
                 // message:{content}, runId, sessionKey}
-                streamed_text += event.data.value("text", "");
+                const std::string chunk = event.data.value("text", "");
+                streamed_text += chunk;
+                accumulated_text += chunk;
                 rpc_event.event = events::kOcChat;
                 rpc_event.payload = {
                     {"state", "delta"},
@@ -638,7 +641,7 @@ void register_rpc_handlers(
                       {"sessionKey", session_key}};
                 } else {
                   std::string final_text =
-                      event.data.value("content", streamed_text);
+                      event.data.value("content", accumulated_text);
                   rpc_event.payload = {
                       {"state", "final"},
                       {"message",

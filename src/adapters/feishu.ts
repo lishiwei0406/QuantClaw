@@ -182,16 +182,6 @@ class FeishuAdapter extends ChannelAdapter {
       `[feishu] Processing: "${content.slice(0, 80)}" (session: channel:feishu:${chatId})`,
     );
 
-    // Send typing indicator
-    try {
-      await (this.client.im as any).typing.create({
-        params: { chat_id: chatId },
-        data: { action: 1 },
-      });
-    } catch (e) {
-      console.warn("[feishu] Failed to send typing indicator");
-    }
-
     // For DM, use sender's open_id as the reply target
     // For group, use chat_id
     const replyTargetId = isDM ? senderOpenId : chatId;

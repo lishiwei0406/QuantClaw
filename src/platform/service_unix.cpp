@@ -74,6 +74,27 @@ std::string xml_escape(std::string_view value) {
 
 namespace {
 
+bool is_gateway_process(int pid) {
+#ifdef __APPLE__
+  char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
+  if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0) {
+    return false;
+  }
+  std::string path(pathbuf);
+  return path.find("quantclaw") != std::string::npos;
+#else
+  std::string exe_path = "/proc/" + std::to_string(pid) + "/exe";
+  char buf[PATH_MAX];
+  ssize_t len = readlink(exe_path.c_str(), buf, sizeof(buf) - 1);
+  if (len == -1) {
+    return false;
+  }
+  buf[len] = '\0';
+  std::string path(buf);
+  return path.find("quantclaw") != std::string::npos;
+#endif
+}
+
 int parse_pid_from_string(std::string_view value) {
   for (size_t i = 0; i < value.size(); ++i) {
     const char ch = value[i];
@@ -194,6 +215,8 @@ int ServiceManager::install(int port) {
       << "  <dict>\n"
       << "    <key>HOME</key>\n"
       << "    <string>" << detail::xml_escape(home_directory()) << "</string>\n"
+      << "    <key>PATH</key>\n"
+      << "    <string>" << detail::xml_escape(std::getenv("PATH") ? std::getenv("PATH") : "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin") << "</string>\n"
       << "    <key>QUANTCLAW_LOG_LEVEL</key>\n"
       << "    <string>info</string>\n"
       << "  </dict>\n"
@@ -391,8 +414,8 @@ bool ServiceManager::is_running() const {
     std::ifstream f(pid_file_);
     int pid = -1;
     f >> pid;
-    if (pid > 0) {
-      return kill(pid, 0) == 0;
+    if (pid > 0 && kill(pid, 0) == 0 && is_gateway_process(pid)) {
+      return true;
     }
   }
 
@@ -413,7 +436,7 @@ int ServiceManager::get_pid() const {
     std::ifstream f(pid_file_);
     int pid = -1;
     f >> pid;
-    if (pid > 0) {
+    if (pid > 0 && kill(pid, 0) == 0 && is_gateway_process(pid)) {
       return pid;
     }
   }

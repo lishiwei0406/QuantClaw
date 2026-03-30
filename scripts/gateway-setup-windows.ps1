@@ -44,8 +44,13 @@ if (-not $exePath) {
     exit 1
 }
 
+# 创建必要目录
+$baseDir = Join-Path $env:USERPROFILE ".quantclaw"
+$logsDir = Join-Path $baseDir "logs"
+New-Item -ItemType Directory -Path $baseDir, $logsDir -Force | Out-Null
+
 # 创建辅助启动脚本
-$gatewayScript = "$env:USERPROFILE\.quantclaw\gateway.cmd"
+$gatewayScript = Join-Path $baseDir "gateway.cmd"
 $quantclawPath = $exePath.Replace('\', '\\')
 
 @'
@@ -68,15 +73,20 @@ Write-Host "✓ 创建启动脚本: $gatewayScript" -ForegroundColor Green
 
 # 检查现有任务
 $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-if ($existingTask -and -not $Force) {
-    Write-Host "`n⚠ 计划任务已存在: $TaskName" -ForegroundColor Yellow
-    $choice = Read-Host "是否删除并重新创建? (y/n)"
-    if ($choice -eq 'y') {
+if ($existingTask) {
+    if ($Force) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "✓ 已删除旧任务" -ForegroundColor Green
+        Write-Host "✓ 已删除旧任务(Force)" -ForegroundColor Green
     } else {
-        Write-Host "✗ 已取消操作" -ForegroundColor Red
-        exit 0
+        Write-Host "`n⚠ 计划任务已存在: $TaskName" -ForegroundColor Yellow
+        $choice = Read-Host "是否删除并重新创建? (y/n)"
+        if ($choice -ieq 'y') {
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+            Write-Host "✓ 已删除旧任务" -ForegroundColor Green
+        } else {
+            Write-Host "✗ 已取消操作" -ForegroundColor Red
+            exit 0
+        }
     }
 }
 
@@ -96,7 +106,7 @@ Register-ScheduledTask -TaskName $TaskName `
 Write-Host "`n✓ 计划任务创建成功: $TaskName" -ForegroundColor Green
 
 # 创建配置文件（如果不存在）
-$configPath = "$env:USERPROFILE\.quantclaw\quantclaw.json"
+$configPath = Join-Path $baseDir "quantclaw.json"
 if (-not (Test-Path $configPath)) {
     Write-Host "`n📝 创建默认配置文件..." -ForegroundColor Cyan
 
@@ -143,7 +153,14 @@ if ($choice -eq 'y') {
     Start-Sleep -Seconds 3
 
     # 检查是否运行
-    $process = Get-Process | Where-Object { $_.Path -eq $exePath }
+    try {
+        $process = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $exePath } | Select-Object -First 1
+        if (-not $process) {
+            $process = Get-Process -Name "quantclaw" -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -eq $exePath } | Select-Object -First 1
+        }
+    } catch {
+        $process = Get-Process -Name "quantclaw" -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
     if ($process) {
         Write-Host "✓ Gateway 进程正在运行 (PID: $($process.Id))" -ForegroundColor Green
     } else {

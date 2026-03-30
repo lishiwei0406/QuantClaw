@@ -141,6 +141,7 @@ class AgentCommandsIntegrationTest : public ::testing::Test {
  protected:
   void SetUp() override {
     port_ = quantclaw::test::FindFreePort();
+    ASSERT_NE(port_, 0) << "Failed to reserve a free TCP port";
     test_dir_ = quantclaw::test::MakeTestDir("agent_cmd_test");
     workspace_dir_ = test_dir_ / "workspace";
     sessions_dir_ = test_dir_ / "sessions";

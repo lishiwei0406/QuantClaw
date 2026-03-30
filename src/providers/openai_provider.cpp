@@ -300,13 +300,20 @@ static std::vector<ToolCall> TakeCompleteToolCalls(StreamContext* ctx,
   std::vector<StreamContext::PendingToolCall> remaining;
 
   for (const auto& pending : ctx->pending_tool_calls) {
-    if (!HasNonWhitespace(pending.name)) {
+    nlohmann::json parsed_arguments = nlohmann::json::object();
+    bool invalid_arguments = false;
+    if (HasNonWhitespace(pending.arguments)) {
+      parsed_arguments = nlohmann::json::parse(pending.arguments, nullptr, false);
+      invalid_arguments = parsed_arguments.is_discarded();
+    }
+
+    if (pending.id.empty() || !HasNonWhitespace(pending.name) || invalid_arguments) {
       if (!drop_incomplete) {
         remaining.push_back(pending);
       } else if (ctx->logger) {
         ctx->logger->warn(
-            "Dropping incomplete streamed tool call: id='{}', arguments_len={}",
-            pending.id, pending.arguments.size());
+            "Dropping incomplete streamed tool call: id='{}', name='{}', arguments_len={}",
+            pending.id, pending.name, pending.arguments.size());
       }
       continue;
     }
@@ -314,14 +321,7 @@ static std::vector<ToolCall> TakeCompleteToolCalls(StreamContext* ctx,
     ToolCall tc;
     tc.id = pending.id;
     tc.name = pending.name;
-    if (pending.arguments.empty()) {
-      tc.arguments = nlohmann::json::object();
-    } else {
-      tc.arguments = nlohmann::json::parse(pending.arguments, nullptr, false);
-      if (tc.arguments.is_discarded()) {
-        tc.arguments = nlohmann::json::object();
-      }
-    }
+    tc.arguments = std::move(parsed_arguments);
     complete.push_back(std::move(tc));
   }
 

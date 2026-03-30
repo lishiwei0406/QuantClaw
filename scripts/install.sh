@@ -80,6 +80,11 @@ lookup_user_home() {
 
 install_linux_deps() {
   [[ "$SKIP_DEPS" == "1" ]] && return 0
+  if [[ "$INSTALL_MODE" == "user" && $EUID -ne 0 ]]; then
+    warn "User-mode install cannot install system packages without root."
+    warn "Please install dependencies manually or run with sudo and --user flag."
+    return 0
+  fi
   [[ -f /etc/os-release ]] || die "Cannot detect Linux distribution"
   . /etc/os-release
   info "Installing Linux build dependencies..."
@@ -146,8 +151,7 @@ run_for_target_user() {
   local target_home="$1"
   shift
 
-  if [[ "$INSTALL_MODE" == "system" && -n "${SUDO_USER:-}" &&
-        "${SUDO_USER}" != "root" ]]; then
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
     sudo -u "$SUDO_USER" -H env HOME="$target_home" "$@"
     return
   fi
@@ -164,9 +168,9 @@ install_binary() {
     target_dir="${QUANTCLAW_INSTALL_PREFIX:-/usr/local/bin}"
   fi
 
-  mkdir -p "$target_dir"
-  cp "$SOURCE_BINARY" "${target_dir}/quantclaw"
-  chmod +x "${target_dir}/quantclaw"
+  run_for_target_user "$target_home" mkdir -p "$target_dir"
+  run_for_target_user "$target_home" cp "$SOURCE_BINARY" "${target_dir}/quantclaw"
+  run_for_target_user "$target_home" chmod +x "${target_dir}/quantclaw"
   echo "${target_dir}/quantclaw"
 }
 
