@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "quantclaw/auth/openai_codex_auth.hpp"
 #include "quantclaw/providers/anthropic_provider.hpp"
+#include "quantclaw/providers/openai_codex_provider.hpp"
 #include "quantclaw/providers/openai_provider.hpp"
 
 namespace quantclaw {
@@ -45,6 +47,17 @@ void ProviderRegistry::RegisterBuiltinFactories() {
         entry.base_url.empty() ? "https://api.openai.com/v1" : entry.base_url;
     return std::make_shared<OpenAIProvider>(entry.api_key, url, entry.timeout,
                                             logger);
+  });
+
+  RegisterFactory("openai-codex", [](const ProviderEntry& entry,
+                                     std::shared_ptr<spdlog::logger> logger) {
+    std::string url = entry.base_url.empty() ? "https://chatgpt.com/backend-api"
+                                             : entry.base_url;
+    auto auth_client = std::make_shared<auth::OpenAICodexOAuthClient>(logger);
+    auto token_source = std::make_shared<auth::OpenAICodexCredentialResolver>(
+        auth::OpenAICodexAuthStore(), auth_client, logger);
+    return std::make_shared<OpenAICodexProvider>(url, entry.timeout, logger,
+                                                 token_source);
   });
 
   // Anthropic

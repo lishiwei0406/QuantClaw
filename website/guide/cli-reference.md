@@ -149,6 +149,23 @@ quantclaw sessions delete SESSION_KEY
 quantclaw sessions reset SESSION_KEY
 ```
 
+### models auth
+
+Manage OpenAI Codex OAuth credentials.
+
+```bash
+quantclaw models auth <login|status|logout> --provider openai-codex
+```
+
+**Examples:**
+```bash
+quantclaw models auth login --provider openai-codex
+quantclaw models auth status --provider openai-codex
+quantclaw models auth logout --provider openai-codex
+```
+
+`login` opens a browser-based OAuth flow and stores credentials in `~/.quantclaw/auth/openai-codex.json`. `status` shows whether cached credentials exist and whether they are still valid or refreshable. `logout` removes the locally cached authorization and falls back to the normal API-key-based `openai` provider flow.
+
 ### config
 
 Manage configuration.

@@ -130,6 +130,23 @@ quantclaw sessions delete SESSION_KEY
 quantclaw sessions reset SESSION_KEY
 ```
 
+### models auth
+
+管理 OpenAI Codex OAuth 凭证。
+
+```bash
+quantclaw models auth <login|status|logout> --provider openai-codex
+```
+
+**示例：**
+```bash
+quantclaw models auth login --provider openai-codex
+quantclaw models auth status --provider openai-codex
+quantclaw models auth logout --provider openai-codex
+```
+
+`login` 会打开浏览器 OAuth 流程，并把凭证保存到 `~/.quantclaw/auth/openai-codex.json`。`status` 会显示本地是否已有缓存凭证，以及当前 token 是否仍然有效或可刷新。`logout` 会删除本地缓存授权，之后会回退到普通的 API key `openai` provider 流程。
+
 ### config
 
 管理配置。

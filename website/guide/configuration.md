@@ -111,6 +111,34 @@ Each key under `providers` defines a named provider:
 - `baseUrl`: API base URL (change to use compatible endpoints like DeepSeek, local Ollama, etc.)
 - `timeout`: Request timeout in seconds (default: `30`)
 
+### OpenAI Codex OAuth
+
+If you want a browser login flow instead of `OPENAI_API_KEY`, use the dedicated `openai-codex` provider:
+
+```bash
+quantclaw models auth login --provider openai-codex
+quantclaw models auth status --provider openai-codex
+quantclaw models auth logout --provider openai-codex
+```
+
+Credentials are stored in `~/.quantclaw/auth/openai-codex.json` and refreshed automatically when possible. The OAuth-backed provider is configured separately from the standard `openai` provider:
+
+```json
+{
+  "llm": {
+    "model": "openai-codex/gpt-5"
+  },
+  "providers": {
+    "openai-codex": {
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "timeout": 30
+    }
+  }
+}
+```
+
+Use `openai` when you want direct API-key access, and `openai-codex` when you want ChatGPT/Codex OAuth.
+
 ## Gateway Configuration (`gateway`)
 
 ```json

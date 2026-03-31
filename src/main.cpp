@@ -18,6 +18,7 @@
 #include "quantclaw/cli/agent_commands.hpp"
 #include "quantclaw/cli/cli_manager.hpp"
 #include "quantclaw/cli/gateway_commands.hpp"
+#include "quantclaw/cli/model_auth_commands.hpp"
 #include "quantclaw/cli/onboard_commands.hpp"
 #include "quantclaw/cli/session_commands.hpp"
 #include "quantclaw/common/parse_util.hpp"
@@ -1284,8 +1285,21 @@ int main(int argc, char* argv[]) {
            }
          }
 
+         if (sub == "auth") {
+           quantclaw::cli::ModelAuthCommandContext ctx;
+           ctx.logger = logger;
+           ctx.oauth_client =
+               std::make_shared<quantclaw::auth::OpenAICodexOAuthClient>(
+                   logger);
+           ctx.store = quantclaw::auth::OpenAICodexAuthStore();
+           ctx.in = &std::cin;
+           ctx.out = &std::cout;
+           ctx.err = &std::cerr;
+           return quantclaw::cli::HandleModelsAuthCommand(sub_args, ctx);
+         }
+
          std::cerr << "Unknown models subcommand: " << sub << std::endl;
-         std::cerr << "Available: list, set, aliases" << std::endl;
+         std::cerr << "Available: list, set, aliases, auth" << std::endl;
          return 1;
        }});
 

@@ -139,8 +139,10 @@ set(QUANTCLAW_CORE_SOURCES
     src/core/mmr_reranker.cpp
     src/core/temporal_decay.cpp
     # Providers
+    src/auth/openai_codex_auth.cpp
     src/providers/curl_raii.cpp
     src/providers/openai_provider.cpp
+    src/providers/openai_codex_provider.cpp
     src/providers/anthropic_provider.cpp
     src/providers/provider_registry.cpp
     src/providers/provider_error.cpp
@@ -149,6 +151,7 @@ set(QUANTCLAW_CORE_SOURCES
     # CLI
     src/cli/cli_manager.cpp
     src/cli/commands.cpp
+    src/cli/model_auth_commands.cpp
     src/cli/gateway_commands.cpp
     src/cli/agent_commands.cpp
     src/cli/session_commands.cpp
@@ -310,6 +313,8 @@ if(BUILD_TESTS)
         tests/test_mcp_server.cpp
         tests/test_mcp_integration.cpp
         tests/test_openai_provider.cpp
+        tests/test_openai_codex_auth.cpp
+        tests/test_openai_codex_provider.cpp
         tests/test_anthropic_provider.cpp
         tests/test_security_sandbox.cpp
         tests/test_tool_registry.cpp
@@ -322,6 +327,7 @@ if(BUILD_TESTS)
         tests/test_mcp_client.cpp
         tests/test_daemon_manager.cpp
         tests/test_cli_commands.cpp
+        tests/test_model_auth_commands.cpp
         tests/test_rpc_handlers.cpp
         tests/test_e2e.cpp
         tests/test_plugin_system.cpp
@@ -375,6 +381,4 @@ if(BUILD_TESTS)
         gtest_discover_tests(quantclaw_tests)
     endif()
 endif()
-
-
 
