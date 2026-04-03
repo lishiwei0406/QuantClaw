@@ -263,7 +263,7 @@ quantclaw models auth status --provider openai-codex
 quantclaw models auth logout --provider openai-codex
 ```
 
-OAuth credentials are stored in `~/.quantclaw/auth/openai-codex.json` and are refreshed automatically when possible. To use the OAuth-backed provider, point your model at `openai-codex/...`, for example:
+OAuth credentials are stored in `~/.quantclaw/auth/openai-codex.json` and are refreshed automatically when possible. `status` reports whether cached credentials exist and whether the access token is still valid or refreshable. `logout` clears only the local cached credentials, it does not switch your configured model away from `openai-codex/...`. Auth-store updates use atomic replacement, so a failed write does not wipe an existing cached login. To use the OAuth-backed provider, point your model at `openai-codex/...`, for example:
 
 ```json
 {
@@ -294,7 +294,7 @@ quantclaw models auth logout --provider github-copilot
 quantclaw models auth login-github-copilot
 ```
 
-Long-lived GitHub credentials are stored in `~/.quantclaw/auth/github-copilot.json`, and short-lived Copilot API tokens are cached in `~/.quantclaw/auth/github-copilot.token-cache.json`. At runtime, QuantClaw prefers `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`, and only falls back to the local auth store if none of those are set.
+Long-lived GitHub credentials are stored in `~/.quantclaw/auth/github-copilot.json`, and short-lived Copilot API tokens are cached in `~/.quantclaw/auth/github-copilot.token-cache.json`. `status` reports whether cached credentials exist and whether the current access token is still valid or refreshable. `logout` clears only the local cached credentials, it does not switch your configured model away from `github-copilot/...`. Auth-store updates use atomic replacement, so a failed write does not wipe an existing cached login. At runtime, QuantClaw prefers `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`, and only falls back to the local auth store if none of those are set.
 
 To use the provider, point your model at `github-copilot/...`, for example:
 

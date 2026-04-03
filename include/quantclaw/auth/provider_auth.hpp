@@ -52,4 +52,17 @@ class BearerTokenSource {
   virtual std::string ResolveAccessToken() = 0;
 };
 
+#ifdef _WIN32
+namespace detail {
+
+using ProviderAuthReplaceFileFn = bool (*)(const std::filesystem::path& from,
+                                           const std::filesystem::path& to,
+                                           std::string* error);
+
+void SetProviderAuthReplaceFileFnForTest(ProviderAuthReplaceFileFn fn);
+void ResetProviderAuthReplaceFileFnForTest();
+
+}  // namespace detail
+#endif
+
 }  // namespace quantclaw::auth

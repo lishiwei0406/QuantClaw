@@ -12,6 +12,7 @@
 
 #include "quantclaw/auth/openai_codex_auth.hpp"
 #include "quantclaw/providers/openai_codex_provider.hpp"
+#include "quantclaw/providers/provider_error.hpp"
 
 #include "test_helpers.hpp"
 #include <gtest/gtest.h>
@@ -165,6 +166,101 @@ TEST(OpenAICodexProviderTest, StreamingParsesTextDeltas) {
 
   EXPECT_EQ(text, "Hello world");
   EXPECT_TRUE(saw_end);
+
+  server.stop();
+  server_thread.join();
+}
+
+TEST(OpenAICodexProviderTest,
+     ChatCompletionPrefersHttpClassificationWhenSseReportsError) {
+  const int port = test::FindFreePort();
+  ASSERT_GT(port, 0);
+
+  httplib::Server server;
+  server.Post("/codex/responses", [&](const httplib::Request& /*req*/,
+                                      httplib::Response& res) {
+    res.status = 401;
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t /*offset*/, httplib::DataSink& sink) {
+          const char event[] =
+              "data: {\"type\":\"error\",\"message\":\"unauthorized\"}\n\n";
+          sink.write(event, sizeof(event) - 1);
+          sink.done();
+          return true;
+        });
+  });
+
+  std::thread server_thread([&]() {
+    test::ReleaseHeldPort(port);
+    server.listen("127.0.0.1", port);
+  });
+  ASSERT_TRUE(test::WaitForServerReady(port));
+
+  auto logger = make_logger("openai-codex-provider-http-error");
+  auto token_source = std::make_shared<FakeBearerTokenSource>();
+  OpenAICodexProvider provider("http://127.0.0.1:" + std::to_string(port), 30,
+                               logger, token_source);
+
+  ChatCompletionRequest request;
+  request.model = "gpt-5";
+  request.messages.push_back({"user", "Say hello"});
+
+  try {
+    (void)provider.ChatCompletion(request);
+    FAIL() << "Expected ProviderError";
+  } catch (const ProviderError& e) {
+    EXPECT_EQ(e.Kind(), ProviderErrorKind::kAuthError);
+    EXPECT_EQ(e.HttpStatus(), 401);
+  }
+
+  server.stop();
+  server_thread.join();
+}
+
+TEST(OpenAICodexProviderTest,
+     StreamingPrefersHttpClassificationWhenSseReportsError) {
+  const int port = test::FindFreePort();
+  ASSERT_GT(port, 0);
+
+  httplib::Server server;
+  server.Post("/codex/responses", [&](const httplib::Request& /*req*/,
+                                      httplib::Response& res) {
+    res.status = 429;
+    res.set_chunked_content_provider(
+        "text/event-stream", [](size_t /*offset*/, httplib::DataSink& sink) {
+          const char event[] =
+              "data: {\"type\":\"error\",\"message\":\"rate limited\"}\n\n";
+          sink.write(event, sizeof(event) - 1);
+          sink.done();
+          return true;
+        });
+  });
+
+  std::thread server_thread([&]() {
+    test::ReleaseHeldPort(port);
+    server.listen("127.0.0.1", port);
+  });
+  ASSERT_TRUE(test::WaitForServerReady(port));
+
+  auto logger = make_logger("openai-codex-provider-stream-http-error");
+  auto token_source = std::make_shared<FakeBearerTokenSource>();
+  OpenAICodexProvider provider("http://127.0.0.1:" + std::to_string(port), 30,
+                               logger, token_source);
+
+  ChatCompletionRequest request;
+  request.model = "gpt-5";
+  request.stream = true;
+  request.messages.push_back({"user", "Say hello"});
+
+  try {
+    provider.ChatCompletionStream(request,
+                                  [](const ChatCompletionResponse& /*chunk*/) {
+                                  });
+    FAIL() << "Expected ProviderError";
+  } catch (const ProviderError& e) {
+    EXPECT_EQ(e.Kind(), ProviderErrorKind::kRateLimit);
+    EXPECT_EQ(e.HttpStatus(), 429);
+  }
 
   server.stop();
   server_thread.join();

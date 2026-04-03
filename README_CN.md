@@ -263,7 +263,7 @@ quantclaw models auth status --provider openai-codex
 quantclaw models auth logout --provider openai-codex
 ```
 
-OAuth 凭证会保存在 `~/.quantclaw/auth/openai-codex.json`，并在可用时自动刷新。要使用这条 OAuth 路径，把模型配置成 `openai-codex/...`，例如：
+OAuth 凭证会保存在 `~/.quantclaw/auth/openai-codex.json`，并在可用时自动刷新。`status` 会显示本地是否已有缓存凭证，以及当前 access token 是否仍然有效或可刷新。`logout` 只会清除本地缓存凭证，不会把你当前配置的模型自动切回非 `openai-codex/...` 路径。Auth store 写盘采用原子替换，保存失败时不会把已有登录态一起删掉。要使用这条 OAuth 路径，把模型配置成 `openai-codex/...`，例如：
 
 ```json
 {
@@ -294,7 +294,7 @@ quantclaw models auth logout --provider github-copilot
 quantclaw models auth login-github-copilot
 ```
 
-长期 GitHub 凭证会保存在 `~/.quantclaw/auth/github-copilot.json`，短期 Copilot API token 会缓存在 `~/.quantclaw/auth/github-copilot.token-cache.json`。运行时会优先读取 `COPILOT_GITHUB_TOKEN`，然后是 `GH_TOKEN`、`GITHUB_TOKEN`，如果都没有再回退到本地 auth store。
+长期 GitHub 凭证会保存在 `~/.quantclaw/auth/github-copilot.json`，短期 Copilot API token 会缓存在 `~/.quantclaw/auth/github-copilot.token-cache.json`。`status` 会显示本地是否已有缓存凭证，以及当前 access token 是否仍然有效或可刷新。`logout` 只会清除本地缓存凭证，不会把你当前配置的模型自动切回非 `github-copilot/...` 路径。Auth store 写盘采用原子替换，保存失败时不会把已有登录态一起删掉。运行时会优先读取 `COPILOT_GITHUB_TOKEN`，然后是 `GH_TOKEN`、`GITHUB_TOKEN`，如果都没有再回退到本地 auth store。
 
 要使用这条路径，把模型配置成 `github-copilot/...`，例如：
 

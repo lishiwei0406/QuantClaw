@@ -45,6 +45,24 @@ class FakeOAuthClient : public OpenAICodexOAuthClient {
   }
 };
 
+#ifdef _WIN32
+bool AlwaysFailReplace(const std::filesystem::path& /*from*/,
+                       const std::filesystem::path& /*to*/,
+                       std::string* error) {
+  if (error != nullptr) {
+    *error = "simulated replace failure";
+  }
+  return false;
+}
+
+class ScopedReplaceHookReset {
+ public:
+  ~ScopedReplaceHookReset() {
+    detail::ResetProviderAuthReplaceFileFnForTest();
+  }
+};
+#endif
+
 }  // namespace
 
 TEST(OpenAICodexAuthTest, BuildAuthorizeUrlIncludesExpectedParameters) {
@@ -153,5 +171,38 @@ TEST(OpenAICodexAuthTest, ParseManualCodeRawCodePreservesLiteralPlus) {
   // a space the way query-string encoding would.
   EXPECT_EQ(ParseOpenAICodexManualCode("abc+def"), "abc+def");
 }
+
+#ifdef _WIN32
+TEST(OpenAICodexAuthTest,
+     StoreSaveKeepsExistingCredentialsWhenWindowsReplaceFails) {
+  ScopedReplaceHookReset reset_hook;
+
+  const auto dir = test::MakeTestDir("openai_codex_auth_replace_failure");
+  const auto path = dir / "openai-codex.json";
+
+  OpenAICodexAuthStore store(path);
+  OpenAICodexAuthRecord original;
+  original.provider = "openai-codex";
+  original.access_token = "original-access-token";
+  original.refresh_token = "original-refresh-token";
+  original.expires_at = 100;
+  store.Save(original);
+
+  detail::SetProviderAuthReplaceFileFnForTest(&AlwaysFailReplace);
+
+  OpenAICodexAuthRecord replacement = original;
+  replacement.access_token = "replacement-access-token";
+  replacement.refresh_token = "replacement-refresh-token";
+  replacement.expires_at = 200;
+
+  EXPECT_THROW(store.Save(replacement), std::runtime_error);
+
+  auto loaded = store.Load();
+  ASSERT_TRUE(loaded.has_value());
+  EXPECT_EQ(loaded->access_token, original.access_token);
+  EXPECT_EQ(loaded->refresh_token, original.refresh_token);
+  EXPECT_EQ(loaded->expires_at, original.expires_at);
+}
+#endif
 
 }  // namespace quantclaw::auth
