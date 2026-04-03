@@ -403,9 +403,8 @@ void OpenAICodexAuthStore::Save(const OpenAICodexAuthRecord& record) const {
   {
     // Create with 0600 from the outset to eliminate the window where sensitive
     // refresh-token bytes could be world-readable before a chmod.
-    const int fd =
-        ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
-               S_IRUSR | S_IWUSR);
+    const int fd = ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
+                          S_IRUSR | S_IWUSR);
     if (fd < 0) {
       throw std::runtime_error("Failed to write auth store: " +
                                temp_path.string());
