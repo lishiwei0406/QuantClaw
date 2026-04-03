@@ -301,7 +301,9 @@ TEST_F(E2ETest, E2E_AgentRequest) {
 TEST_F(E2ETest, E2E_AgentRequestExecutesReadTool) {
   quantclaw::ChatCompletionResponse tool_chunk;
   tool_chunk.tool_calls.push_back(
-      {"call_read_1", "read", {{"path", (workspace_dir_ / "hello.txt").string()}}});
+      {"call_read_1",
+       "read",
+       {{"path", (workspace_dir_ / "hello.txt").string()}}});
 
   quantclaw::ChatCompletionResponse tool_end;
   tool_end.is_stream_end = true;
@@ -343,7 +345,8 @@ TEST_F(E2ETest, E2E_AgentRequestExecutesReadTool) {
                       tool_events_cv.notify_all();
                     });
 
-  auto result = client->Call("agent.request", {{"message", "看一下当前目录有啥"}}, 10000);
+  auto result =
+      client->Call("agent.request", {{"message", "看一下当前目录有啥"}}, 10000);
 
   ASSERT_TRUE(result.contains("response"));
   EXPECT_NE(result["response"].get<std::string>().find("hello world"),
@@ -355,17 +358,17 @@ TEST_F(E2ETest, E2E_AgentRequestExecutesReadTool) {
   std::string observed_tool_content;
   {
     std::unique_lock<std::mutex> lock(tool_events_mutex);
-    const bool got_all_events = tool_events_cv.wait_for(
-        lock, std::chrono::seconds(5),
-        [&] { return got_tool_use && got_tool_result; });
+    const bool got_all_events =
+        tool_events_cv.wait_for(lock, std::chrono::seconds(5), [&] {
+          return got_tool_use && got_tool_result;
+        });
     observed_tool_use = got_tool_use;
     observed_tool_result = got_tool_result;
     observed_tool_name = tool_name;
     observed_tool_content = tool_content;
     ASSERT_TRUE(got_all_events)
         << "Timed out waiting for tool events: got_tool_use="
-        << observed_tool_use
-        << ", got_tool_result=" << observed_tool_result;
+        << observed_tool_use << ", got_tool_result=" << observed_tool_result;
   }
 
   EXPECT_EQ(observed_tool_name, "read");
