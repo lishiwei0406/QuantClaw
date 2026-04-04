@@ -30,7 +30,7 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
 
       - name: Run actionlint
-        run: $(go env GOPATH)/bin/actionlint
+        run: "$(go env GOPATH)/bin/actionlint"
 
       - name: Run yamllint
         run: find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 | xargs -0 yamllint -d relaxed
@@ -44,7 +44,7 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

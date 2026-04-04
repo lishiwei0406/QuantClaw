@@ -54,7 +54,6 @@ jobs:
 
   docker-trivy:
     name: Docker Trivy Scan
-    if: ${{ hashFiles('Dockerfile') != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -63,10 +62,26 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect Dockerfile
+        id: dockerfile
+        shell: bash
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip scan when Dockerfile is missing
+        if: steps.dockerfile.outputs.present != 'true'
+        run: echo "No Dockerfile present; skipping Trivy scan."
+
       - name: Build image
+        if: steps.dockerfile.outputs.present == 'true'
         run: docker build -t quantclaw:hardening .
 
       - name: Install Trivy
+        if: steps.dockerfile.outputs.present == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg lsb-release
@@ -76,6 +91,7 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Run Trivy
+        if: steps.dockerfile.outputs.present == 'true'
         run: trivy image --exit-code 1 --severity CRITICAL,HIGH quantclaw:hardening
 
   sbom:

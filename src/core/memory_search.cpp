@@ -13,6 +13,10 @@
 
 namespace quantclaw {
 
+static size_t clamp_result_count(int max_results) {
+  return static_cast<size_t>(std::max(max_results, 0));
+}
+
 MemorySearch::MemorySearch(std::shared_ptr<spdlog::logger> logger)
     : logger_(std::move(logger)) {}
 
@@ -35,9 +39,9 @@ void MemorySearch::IndexDirectory(const std::filesystem::path& dir) {
   if (!entries_.empty()) {
     double total_len = 0;
     for (const auto& e : entries_) {
-      total_len += e.tokens.size();
+      total_len += static_cast<double>(e.tokens.size());
     }
-    avg_doc_length_ = total_len / entries_.size();
+    avg_doc_length_ = total_len / static_cast<double>(entries_.size());
   }
 
   logger_->info("Indexed {} entries from {}", entries_.size(), dir.string());
@@ -92,9 +96,9 @@ void MemorySearch::IndexFile(const std::filesystem::path& file) {
   if (!entries_.empty()) {
     double total_len = 0;
     for (const auto& e : entries_) {
-      total_len += e.tokens.size();
+      total_len += static_cast<double>(e.tokens.size());
     }
-    avg_doc_length_ = total_len / entries_.size();
+    avg_doc_length_ = total_len / static_cast<double>(entries_.size());
   }
 }
 
@@ -117,8 +121,8 @@ std::vector<MemorySearchResult> MemorySearch::Search(const std::string& query,
             [](const auto& a, const auto& b) { return a.first > b.first; });
 
   std::vector<MemorySearchResult> results;
-  int count = std::min(max_results, static_cast<int>(scored.size()));
-  for (int i = 0; i < count; ++i) {
+  const auto count = std::min(scored.size(), clamp_result_count(max_results));
+  for (size_t i = 0; i < count; ++i) {
     MemorySearchResult r;
     r.source = scored[i].second->filepath;
     r.content = scored[i].second->content;
@@ -194,7 +198,7 @@ MemorySearch::HybridSearch(const std::string& query,
     // Apply temporal decay and MMR even without vector search
     if (!opts.use_temporal_decay && !opts.use_mmr) {
       bm25_results.resize(
-          std::min(static_cast<int>(bm25_results.size()), opts.max_results));
+          std::min(bm25_results.size(), clamp_result_count(opts.max_results)));
       return bm25_results;
     }
 
@@ -227,7 +231,7 @@ MemorySearch::HybridSearch(const std::string& query,
     }
 
     bm25_results.resize(
-        std::min(static_cast<int>(bm25_results.size()), opts.max_results));
+        std::min(bm25_results.size(), clamp_result_count(opts.max_results)));
     return bm25_results;
   }
 
@@ -238,7 +242,7 @@ MemorySearch::HybridSearch(const std::string& query,
   if (resp.embeddings.empty()) {
     // Embedding failed, fall back to BM25
     bm25_results.resize(
-        std::min(static_cast<int>(bm25_results.size()), opts.max_results));
+        std::min(bm25_results.size(), clamp_result_count(opts.max_results)));
     return bm25_results;
   }
 
@@ -325,8 +329,9 @@ MemorySearch::HybridSearch(const std::string& query,
 
   // Return top results
   std::vector<MemorySearchResult> results;
-  int count = std::min(opts.max_results, static_cast<int>(all_entries.size()));
-  for (int i = 0; i < count; ++i) {
+  const auto count =
+      std::min(all_entries.size(), clamp_result_count(opts.max_results));
+  for (size_t i = 0; i < count; ++i) {
     results.push_back({all_entries[i].source, all_entries[i].content,
                        all_entries[i].combined, all_entries[i].line_number});
   }
