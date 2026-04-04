@@ -290,6 +290,15 @@ OpenAICodexProvider::ChatCompletion(const ChatCompletionRequest& request) {
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_);
 
   CURLcode code = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+  if (http_code >= 400) {
+    const std::string error_body =
+        ctx.raw_body.empty() ? ctx.callback_error : ctx.raw_body;
+    throw ProviderError(
+        ClassifyHttpError(static_cast<int>(http_code), error_body),
+        static_cast<int>(http_code), error_body, "openai-codex");
+  }
   if (!ctx.callback_error.empty()) {
     throw ProviderError(ProviderErrorKind::kUnknown, 0, ctx.callback_error,
                         "openai-codex");
@@ -298,18 +307,6 @@ OpenAICodexProvider::ChatCompletion(const ChatCompletionRequest& request) {
     throw ProviderError(ProviderErrorKind::kUnknown, 0,
                         "OpenAI Codex request failed: " +
                             std::string(curl_easy_strerror(code)),
-                        "openai-codex");
-  }
-
-  long http_code = 0;
-  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
-  if (http_code >= 400) {
-    throw ProviderError(
-        ClassifyHttpError(static_cast<int>(http_code), ctx.raw_body),
-        static_cast<int>(http_code), ctx.raw_body, "openai-codex");
-  }
-  if (!ctx.callback_error.empty()) {
-    throw ProviderError(ProviderErrorKind::kUnknown, 0, ctx.callback_error,
                         "openai-codex");
   }
 
@@ -339,6 +336,15 @@ void OpenAICodexProvider::ChatCompletionStream(
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_);
 
   CURLcode code = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+  if (http_code >= 400) {
+    const std::string error_body =
+        ctx.raw_body.empty() ? ctx.callback_error : ctx.raw_body;
+    throw ProviderError(
+        ClassifyHttpError(static_cast<int>(http_code), error_body),
+        static_cast<int>(http_code), error_body, "openai-codex");
+  }
   if (!ctx.callback_error.empty()) {
     throw ProviderError(ProviderErrorKind::kUnknown, 0, ctx.callback_error,
                         "openai-codex");
@@ -347,18 +353,6 @@ void OpenAICodexProvider::ChatCompletionStream(
     throw ProviderError(ProviderErrorKind::kUnknown, 0,
                         "OpenAI Codex streaming request failed: " +
                             std::string(curl_easy_strerror(code)),
-                        "openai-codex");
-  }
-
-  long http_code = 0;
-  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
-  if (http_code >= 400) {
-    throw ProviderError(
-        ClassifyHttpError(static_cast<int>(http_code), ctx.raw_body),
-        static_cast<int>(http_code), ctx.raw_body, "openai-codex");
-  }
-  if (!ctx.callback_error.empty()) {
-    throw ProviderError(ProviderErrorKind::kUnknown, 0, ctx.callback_error,
                         "openai-codex");
   }
 }

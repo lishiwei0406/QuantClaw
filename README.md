@@ -263,7 +263,7 @@ quantclaw models auth status --provider openai-codex
 quantclaw models auth logout --provider openai-codex
 ```
 
-OAuth credentials are stored in `~/.quantclaw/auth/openai-codex.json` and are refreshed automatically when possible. To use the OAuth-backed provider, point your model at `openai-codex/...`, for example:
+OAuth credentials are stored in `~/.quantclaw/auth/openai-codex.json` and are refreshed automatically when possible. `status` reports whether cached credentials exist and whether the access token is still valid or refreshable. `logout` clears only the local cached credentials, it does not switch your configured model away from `openai-codex/...`. Auth-store updates use atomic replacement, so a failed write does not wipe an existing cached login. To use the OAuth-backed provider, point your model at `openai-codex/...`, for example:
 
 ```json
 {
@@ -294,7 +294,7 @@ quantclaw models auth logout --provider github-copilot
 quantclaw models auth login-github-copilot
 ```
 
-Long-lived GitHub credentials are stored in `~/.quantclaw/auth/github-copilot.json`, and short-lived Copilot API tokens are cached in `~/.quantclaw/auth/github-copilot.token-cache.json`. At runtime, QuantClaw prefers `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`, and only falls back to the local auth store if none of those are set.
+Long-lived GitHub credentials are stored in `~/.quantclaw/auth/github-copilot.json`, and short-lived Copilot API tokens are cached in `~/.quantclaw/auth/github-copilot.token-cache.json`. `status` reports whether cached credentials exist and whether the current access token is still valid or refreshable. `logout` clears only the local cached credentials, it does not switch your configured model away from `github-copilot/...`. Auth-store updates use atomic replacement, so a failed write does not wipe an existing cached login. At runtime, QuantClaw prefers `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`, and only falls back to the local auth store if none of those are set.
 
 To use the provider, point your model at `github-copilot/...`, for example:
 
@@ -723,8 +723,8 @@ All helper scripts are in `scripts/`. Run them from the **repository root**.
 | `scripts/build.sh` | Smart build wrapper: color output, `-c` clean, `--debug`, `--tests`, `--asan`/`--tsan`/`--ubsan` sanitizers, CPU auto-detect, and platform-aware dependency setup including Homebrew support on macOS. |
 | `scripts/release.sh` | Build release tarball + SHA256 checksum. Reads version from `scripts/DOCKER_VERSION` or accepts an explicit version argument. Output goes to `dist/`. |
 | `scripts/install.sh` | Native installer: `--user` installs to `~/.quantclaw/bin` (default on macOS), `--system` installs to `/usr/local/bin` (default on Linux), then runs onboarding and installs the background service definition. |
-| `scripts/format-code.sh` | Format all C++ sources with `clang-format`. Pass `--check` for a dry-run (used in CI). |
-| `scripts/format-code-docker.sh` | Same as above but runs inside Docker — no local `clang-format` required. |
+| `scripts/format-code.sh` | Format all C++ sources with `clang-format-18`. Pass `--check` to run the exact dry-run check used by CI. |
+| `scripts/format-code-docker.sh` | Same as above but runs inside Docker with `clang-format-18` pinned, so local and CI results stay aligned. |
 | `scripts/build_ui.sh` | Build the web Dashboard UI assets. |
 
 ## Testing
@@ -945,7 +945,7 @@ Contributions are welcome!
 
 ### Code style
 
-QuantClaw follows the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html), enforced with `clang-format`.
+QuantClaw follows the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html). The repository standard is `clang-format-18`, and CI runs `./scripts/format-code.sh --check`.
 
 **VS Code** — add to `.vscode/settings.json`:
 
@@ -962,6 +962,8 @@ QuantClaw follows the [Google C++ Style Guide](https://google.github.io/stylegui
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
 ./scripts/format-code.sh
+# or verify exactly what CI checks
+./scripts/format-code.sh --check
 git add -u
 EOF
 chmod +x .git/hooks/pre-commit
@@ -1002,7 +1004,7 @@ TEST(MyModuleTest, BasicFunctionality) {
 ### Pull Request checklist
 
 - All tests pass (`ctest --output-on-failure`)
-- Code formatted with `clang-format` (CI checks this)
+- Code formatted with `./scripts/format-code.sh --check` (or the Docker equivalent, which CI mirrors with `clang-format-18`)
 - No new compiler warnings
 - README updated if adding user-facing features
 - Unit tests added for new functionality

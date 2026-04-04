@@ -6,11 +6,14 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <system_error>
 
 #ifndef _WIN32
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif
 
 #include <nlohmann/json.hpp>
@@ -18,6 +21,39 @@
 #include "quantclaw/platform/process.hpp"
 
 namespace quantclaw::auth {
+
+#ifdef _WIN32
+namespace {
+
+bool ReplaceFileAtomicallyWindows(const std::filesystem::path& from,
+                                  const std::filesystem::path& to,
+                                  std::string* error) {
+  if (MoveFileExW(from.c_str(), to.c_str(),
+                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    return true;
+  }
+  if (error != nullptr) {
+    *error = std::error_code(static_cast<int>(GetLastError()),
+                             std::system_category())
+                 .message();
+  }
+  return false;
+}
+
+detail::ProviderAuthReplaceFileFn g_provider_auth_replace_file_fn =
+    &ReplaceFileAtomicallyWindows;
+
+}  // namespace
+
+void detail::SetProviderAuthReplaceFileFnForTest(ProviderAuthReplaceFileFn fn) {
+  g_provider_auth_replace_file_fn =
+      fn != nullptr ? fn : &ReplaceFileAtomicallyWindows;
+}
+
+void detail::ResetProviderAuthReplaceFileFnForTest() {
+  g_provider_auth_replace_file_fn = &ReplaceFileAtomicallyWindows;
+}
+#endif
 
 bool ProviderAuthRecord::HasUsableAccessToken(std::int64_t now_epoch_seconds,
                                               int leeway_seconds) const {
@@ -123,12 +159,12 @@ void ProviderAuthStore::Save(const ProviderAuthRecord& record) const {
     out << content;
     out.close();
   }
-  // Windows: std::filesystem::rename() cannot overwrite an existing file.
-  {
-    std::error_code remove_ec;
-    std::filesystem::remove(path_, remove_ec);
+  std::string replace_error;
+  if (!g_provider_auth_replace_file_fn(temp_path, path_, &replace_error)) {
+    std::error_code cleanup_ec;
+    std::filesystem::remove(temp_path, cleanup_ec);
+    throw std::runtime_error("Failed to replace auth store: " + replace_error);
   }
-  std::filesystem::rename(temp_path, path_);
 #endif
 }
 
