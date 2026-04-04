@@ -136,6 +136,8 @@ std::chrono::seconds CooldownTracker::ComputeCooldown(ProviderErrorKind kind,
       break;
 
     case ProviderErrorKind::kContextOverflow:
+      // Context overflow should fall through to the next model immediately
+      // instead of putting the current one into cooldown.
       return std::chrono::seconds(0);
 
     case ProviderErrorKind::kUnknown:

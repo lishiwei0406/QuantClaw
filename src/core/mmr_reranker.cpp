@@ -64,7 +64,7 @@ MMRReranker::Rerank(const std::vector<RankedItem>& items, int top_k,
   std::vector<bool> picked(items.size(), false);
 
   const auto keep_count =
-      std::min(items.size(), static_cast<size_t>(std::max(top_k, 0)));
+      std::min(items.size(), static_cast<size_t>(top_k));
   for (size_t k = 0; k < keep_count; ++k) {
     double best_mmr = -1e9;
     size_t best_idx = items.size();

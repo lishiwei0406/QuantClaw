@@ -77,18 +77,21 @@ std::vector<Message> ContextPruner::Prune(const std::vector<Message>& history,
   // Determine which assistant message indices are "protected"
   // (the most recent N assistant messages)
   int num_assistants = static_cast<int>(assistant_indices.size());
+  const int protected_assistant_count = std::max(1, effective.protect_recent);
+  const int hard_prune_assistant_count =
+      std::max(1, effective.hard_prune_after);
   int protect_threshold = -1;  // Messages at or after this index are protected
-  if (num_assistants > effective.protect_recent && !assistant_indices.empty()) {
+  if (num_assistants > protected_assistant_count && !assistant_indices.empty()) {
     protect_threshold = assistant_indices[static_cast<size_t>(
-        num_assistants - effective.protect_recent)];
+        num_assistants - protected_assistant_count)];
   }
 
   // Hard prune threshold: messages before this many assistant msgs ago
   int hard_threshold = -1;
-  if (num_assistants > effective.hard_prune_after &&
+  if (num_assistants > hard_prune_assistant_count &&
       !assistant_indices.empty()) {
     hard_threshold = assistant_indices[static_cast<size_t>(
-        num_assistants - effective.hard_prune_after)];
+        num_assistants - hard_prune_assistant_count)];
   }
 
   // Build pruned copy

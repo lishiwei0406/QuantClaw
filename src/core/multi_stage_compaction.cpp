@@ -129,7 +129,7 @@ MultiStageCompaction::CompactMultiStage(const std::vector<Message>& messages,
 
   // Stage 1: Summarize each chunk
   std::vector<std::string> chunk_summaries;
-  chunk_summaries.reserve(static_cast<size_t>(num_chunks));
+  chunk_summaries.reserve(chunks.size());
 
   for (size_t i = 0; i < chunks.size(); ++i) {
     int chunk_tokens = EstimateTokens(chunks[i]);

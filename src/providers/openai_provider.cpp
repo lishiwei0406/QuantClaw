@@ -75,6 +75,8 @@ std::string json_text_content_or_empty(const nlohmann::json& value) {
   return "";
 }
 
+constexpr size_t kMaxPendingToolCallIndex = 256;
+
 nlohmann::json
 serialize_messages_to_openai(const std::vector<Message>& messages,
                              bool thinking_enabled) {
@@ -524,10 +526,18 @@ static size_t StreamWriteCallback(void* contents, size_t size, size_t nmemb,
           continue;
         }
         const auto tool_index = static_cast<size_t>(index);
+        if (tool_index >= kMaxPendingToolCallIndex) {
+          if (ctx->logger) {
+            ctx->logger->warn(
+                "Ignoring streamed tool_call with oversized index={}",
+                tool_index);
+          }
+          continue;
+        }
 
         // Ensure vector is large enough
-        while (ctx->pending_tool_calls.size() <= tool_index) {
-          ctx->pending_tool_calls.push_back({});
+        if (ctx->pending_tool_calls.size() <= tool_index) {
+          ctx->pending_tool_calls.resize(tool_index + 1);
         }
 
         auto& ptc = ctx->pending_tool_calls[tool_index];
