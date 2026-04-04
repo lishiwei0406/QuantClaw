@@ -717,8 +717,8 @@ docker run -d \
 | `scripts/build.sh` | 智能构建脚本：彩色输出、`-c` 清理、`--debug`/`--tests`、`--asan`/`--tsan`/`--ubsan` 消毒器、自动检测 CPU 核数，并按平台安装依赖；在 macOS 上会自动接入 Homebrew。 |
 | `scripts/release.sh` | 构建发布 tarball 并生成 SHA256 校验文件。从 `scripts/DOCKER_VERSION` 读取版本或接受参数。输出到 `dist/`。 |
 | `scripts/install.sh` | 原生安装脚本：`--user` 安装到 `~/.quantclaw/bin`（macOS 默认），`--system` 安装到 `/usr/local/bin`（Linux 默认），随后自动执行 onboarding 并安装后台服务定义。 |
-| `scripts/format-code.sh` | 用 `clang-format` 格式化所有 C++ 源文件。加 `--check` 参数可做 dry-run（CI 使用）。 |
-| `scripts/format-code-docker.sh` | 同上，但在 Docker 内运行，无需本地安装 `clang-format`。 |
+| `scripts/format-code.sh` | 用 `clang-format-18` 格式化所有 C++ 源文件。加 `--check` 参数可运行和 CI 完全一致的 dry-run 检查。 |
+| `scripts/format-code-docker.sh` | 同上，但在 Docker 内固定使用 `clang-format-18`，避免本地和 CI 的格式化结果漂移。 |
 | `scripts/build_ui.sh` | 构建 Web 仪表板 UI 静态资源。 |
 
 
@@ -944,7 +944,7 @@ Apache License 2.0 — 详见 [LICENSE](LICENSE)。
 
 ### 代码规范
 
-QuantClaw 遵循 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)，用 `clang-format` 强制执行。
+QuantClaw 遵循 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)，仓库统一以 `clang-format-18` 为准，CI 直接运行 `./scripts/format-code.sh --check`。
 
 **VS Code** — 在 `.vscode/settings.json` 中添加：
 
@@ -961,6 +961,8 @@ QuantClaw 遵循 [Google C++ Style Guide](https://google.github.io/styleguide/cp
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
 ./scripts/format-code.sh
+# 或先跑一遍和 CI 完全一致的检查
+./scripts/format-code.sh --check
 git add -u
 EOF
 chmod +x .git/hooks/pre-commit
@@ -1001,7 +1003,7 @@ TEST(MyModuleTest, BasicFunctionality) {
 ### Pull Request 检查清单
 
 - 所有测试通过（`ctest --output-on-failure`）
-- 代码已用 `clang-format` 格式化（CI 会检查）
+- 代码已通过 `./scripts/format-code.sh --check`（或等价的 Docker 脚本，CI 固定使用 `clang-format-18`）
 - 无新增编译器警告
 - 如果新增了用户可见的功能，请更新 README
 - 为新功能添加了单元测试

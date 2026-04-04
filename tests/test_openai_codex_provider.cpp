@@ -253,9 +253,8 @@ TEST(OpenAICodexProviderTest,
   request.messages.push_back({"user", "Say hello"});
 
   try {
-    provider.ChatCompletionStream(request,
-                                  [](const ChatCompletionResponse& /*chunk*/) {
-                                  });
+    provider.ChatCompletionStream(
+        request, [](const ChatCompletionResponse& /*chunk*/) {});
     FAIL() << "Expected ProviderError";
   } catch (const ProviderError& e) {
     EXPECT_EQ(e.Kind(), ProviderErrorKind::kRateLimit);
