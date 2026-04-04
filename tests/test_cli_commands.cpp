@@ -115,7 +115,7 @@ static std::string capture_stdout(std::function<void()> fn) {
   char buf[1024];
   ssize_t n;
   while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
-    result.append(buf, n);
+    result.append(buf, static_cast<size_t>(n));
   }
   close(pipefd[0]);
   return result;
@@ -142,7 +142,7 @@ static std::string capture_stderr(std::function<void()> fn) {
   char buf[1024];
   ssize_t n;
   while ((n = read(pipefd[0], buf, sizeof(buf))) > 0) {
-    result.append(buf, n);
+    result.append(buf, static_cast<size_t>(n));
   }
   close(pipefd[0]);
   return result;
