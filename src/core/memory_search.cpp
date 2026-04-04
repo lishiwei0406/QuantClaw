@@ -202,8 +202,8 @@ MemorySearch::HybridSearch(const std::string& query,
   if (!embedding_provider_ || vector_index_.Size() == 0) {
     // Apply temporal decay and MMR even without vector search
     if (!opts.use_temporal_decay && !opts.use_mmr) {
-      bm25_results.resize(std::min(bm25_results.size(),
-                                   clamp_result_count(logger_, opts.max_results)));
+      bm25_results.resize(std::min(
+          bm25_results.size(), clamp_result_count(logger_, opts.max_results)));
       return bm25_results;
     }
 
@@ -235,9 +235,8 @@ MemorySearch::HybridSearch(const std::string& query,
       return final_results;
     }
 
-    bm25_results.resize(
-        std::min(bm25_results.size(),
-                 clamp_result_count(logger_, opts.max_results)));
+    bm25_results.resize(std::min(
+        bm25_results.size(), clamp_result_count(logger_, opts.max_results)));
     return bm25_results;
   }
 
@@ -247,9 +246,8 @@ MemorySearch::HybridSearch(const std::string& query,
   auto resp = embedding_provider_->Embed(req);
   if (resp.embeddings.empty()) {
     // Embedding failed, fall back to BM25
-    bm25_results.resize(
-        std::min(bm25_results.size(),
-                 clamp_result_count(logger_, opts.max_results)));
+    bm25_results.resize(std::min(
+        bm25_results.size(), clamp_result_count(logger_, opts.max_results)));
     return bm25_results;
   }
 

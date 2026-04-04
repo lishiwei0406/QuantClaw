@@ -177,8 +177,7 @@ void register_rpc_handlers(
           // Simple truncation (keep last 20 messages)
           session_manager->ResetSession(key);
           int keep = std::min(20, static_cast<int>(history.size()));
-          const auto start_index =
-              history.size() - static_cast<size_t>(keep);
+          const auto start_index = history.size() - static_cast<size_t>(keep);
           for (size_t i = start_index; i < history.size(); ++i) {
             session_manager->AppendMessage(key, history[i]);
           }
@@ -1645,15 +1644,14 @@ void register_rpc_handlers(
 
   // --- agent.identity.get ---
   // Called on every UI connect to show assistant name/avatar.
-  server.RegisterHandler(
-      "agent.identity.get",
-      [](const nlohmann::json& /*params*/,
-                ClientConnection& /*client*/) -> nlohmann::json {
-        return {{"agentId", "main"},
-                {"name", "QuantClaw Agent"},
-                {"avatar", ""},
-                {"emoji", "\xF0\x9F\xA6\x9E"}};
-      });
+  server.RegisterHandler("agent.identity.get",
+                         [](const nlohmann::json& /*params*/,
+                            ClientConnection& /*client*/) -> nlohmann::json {
+                           return {{"agentId", "main"},
+                                   {"name", "QuantClaw Agent"},
+                                   {"avatar", ""},
+                                   {"emoji", "\xF0\x9F\xA6\x9E"}};
+                         });
 
   // --- node.list ---
   // QuantClaw is a single-node deployment; return empty list.

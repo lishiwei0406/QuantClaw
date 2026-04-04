@@ -81,7 +81,8 @@ std::vector<Message> ContextPruner::Prune(const std::vector<Message>& history,
   const int hard_prune_assistant_count =
       std::max(1, effective.hard_prune_after);
   int protect_threshold = -1;  // Messages at or after this index are protected
-  if (num_assistants > protected_assistant_count && !assistant_indices.empty()) {
+  if (num_assistants > protected_assistant_count &&
+      !assistant_indices.empty()) {
     protect_threshold = assistant_indices[static_cast<size_t>(
         num_assistants - protected_assistant_count)];
   }
