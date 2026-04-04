@@ -364,7 +364,7 @@ int GatewayCommands::ForegroundCommand(const std::vector<std::string>& args) {
   auto command_queue = std::make_unique<gateway::CommandQueue>(
       queue_config,
       // AgentExecutor: runs the agent loop for a queued command
-      [session_manager, agent_loop, prompt_builder, &server, logger = logger_](
+      [session_manager, agent_loop, prompt_builder, logger = logger_](
           const gateway::QueuedCommand& cmd,
           std::function<void(const std::string&, const nlohmann::json&)>
               event_sink) -> nlohmann::json {
